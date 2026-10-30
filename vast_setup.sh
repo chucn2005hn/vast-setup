@@ -10,6 +10,7 @@
 #     sudo bash vast_setup.sh check    -> chi kiem tra cau hinh
 #     sudo bash vast_setup.sh status   -> xem dang o buoc nao
 #     sudo bash vast_setup.sh port     -> hien lai thong tin cai modem
+#     sudo bash vast_setup.sh selftest -> chay self-test (khi do tin cay > 90%)
 #     sudo bash vast_setup.sh reset    -> lam lai tu dau
 #
 #  Nhung gi da kiem chung tren may that (2x GTX 1080, X99-T8D, 2 CPU):
@@ -22,7 +23,10 @@
 #     (file 50-cloud-init.conf bat 'yes') -> tat o moi noi.
 #   - Doi khe card -> ten card mang doi -> mat mang -> netplan khop "en*".
 #   - 2 card o 2 CPU khac nhau (topo SYS) van chay NCCL binh thuong.
-#   - VM cua Vast KHONG chay voi Pascal -> chi cho thue Docker.
+#   - VM cua Vast KHONG chay voi Pascal -> chi cho thue Docker
+#     (support Vast da xac nhan).
+#   - Self-test can do tin cay > 90%: may moi ~60%, doi 1-2 ngay roi chay
+#     sudo bash vast_setup.sh selftest
 # ==================================================================
 set -uo pipefail
 
@@ -34,6 +38,8 @@ TEST_IMAGE="pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime"
 STATE=/root/vast_stage
 PORT_FILE=/root/vast_port_range
 NO_FILE=/root/vast_machine_no
+ID_FILE=/root/vast_machine_id
+VASTAI=/usr/local/bin/vastai
 SELF="$(readlink -f "$0")"
 
 RED='\033[1;31m'; GRN='\033[1;32m'; YEL='\033[1;33m'; NC='\033[0m'
@@ -234,6 +240,68 @@ port_step() {
   kill "$hp" 2>/dev/null || true
 }
 
+# ------------------------------------------------------------------ SELF-TEST
+ensure_vastai_cli() {
+  if [[ ! -x "$VASTAI" ]]; then
+    apt-get install -y python3-pip >/dev/null 2>&1
+    python3 -m pip install -q vastai || { err "Cai cong cu vastai loi"; return 1; }
+  fi
+  [[ -x "$VASTAI" ]] || VASTAI="$(command -v vastai)"
+  if ! "$VASTAI" show user >/dev/null 2>&1; then
+    box "DEN LUOT BAN: NHAP API KEY CUA VAST" \
+        "1. Mo https://cloud.vast.ai/manage-keys/" \
+        "2. Muc 'API Keys' -> + New -> dat ten (vd may-1080-<so>) -> copy key" \
+        "3. Dan key vao day, Enter   (KHONG gui key cho ai)"
+    local k
+    while true; do
+      read -r -p "Dan API key: " k; k="$(echo "$k" | xargs)"
+      [[ -n "$k" ]] || continue
+      "$VASTAI" set api-key "$k" >/dev/null && "$VASTAI" show user >/dev/null 2>&1 && break
+      err "Key sai (luu y: day la API key, KHONG phai key trong lenh cai Vast). Thu lai."
+    done
+  fi
+  ok "Cong cu vastai san sang"
+}
+find_machine_id() {
+  local id; id="$(cat "$ID_FILE" 2>/dev/null)"
+  if [[ -z "$id" ]]; then
+    load_net_info
+    id="$("$VASTAI" show machines --raw 2>/dev/null | python3 -c '
+import sys, json
+ip = sys.argv[1]
+try:
+    d = json.load(sys.stdin)
+    ms = d.get("machines", d) if isinstance(d, dict) else d
+    c = [m for m in ms if str(m.get("public_ipaddr","")).strip() == ip]
+    c.sort(key=lambda m: m.get("id", 0))
+    print(c[-1]["id"] if c else "")
+except Exception:
+    print("")
+' "$PUB_IP")"
+    if [[ -z "$id" ]]; then
+      read -r -p "Khong tu tim duoc ID may. Nhap ID may (xem tren trang Machines): " id
+    fi
+    echo -n "$id" > "$ID_FILE"
+  fi
+  MACHINE_ID="$id"
+}
+run_selftest() {
+  ensure_vastai_cli || return 1
+  find_machine_id
+  step "SELF-TEST MAY $MACHINE_ID"
+  local out; out="$("$VASTAI" self-test machine "$MACHINE_ID" 2>&1)"; echo "$out" | tail -n 25
+  if echo "$out" | grep -qi 'reliability'; then
+    box "CHUA DU DO TIN CAY (can > 90%) - BINH THUONG VOI MAY MOI" \
+        "Cu de may chay 24/7, 1-2 ngay sau chay lai:" \
+        "    sudo bash $SELF selftest" \
+        "Xem do tin cay: so % canh hinh ngon tay cai tren the may (web)."
+  elif echo "$out" | grep -qi -e 'passed' -e 'success'; then
+    ok "SELF-TEST DAT - may se duoc Verified sau it phut/gio"
+  else
+    warn "Xem ket qua o tren. Neu loi khac 'reliability', chup gui ho tro."
+  fi
+}
+
 # ------------------------------------------------------------------ BUOC 1
 stage1() {
   step "BUOC 1/4 - KIEM TRA + CHUAN BI HE THONG"
@@ -374,12 +442,20 @@ stage4() {
   nvidia-smi -L
   echo "VM     : KHONG ho tro voi GTX 1080 (anh VM cua Vast khong chay tren Pascal) -> chi cho thue Docker"
   print_port_box
-  box "VIEC CON LAI (lam tren web)" \
-      "1. https://cloud.vast.ai/host/machines -> may moi -> Settings" \
-      "   On-demand 0.05 | Min bid 0.04 | Storage 0.15 | Upload 3 | Download 2" \
-      "   Ngay het han xa (vd 2 nam) -> Update Listing" \
-      "2. Sau 1-2 ngay, do tin cay > 90% -> chay self-test de duoc Verified" \
-      "3. KHONG chay 'apt upgrade' / 'do-release-upgrade'"
+  box "DEN LUOT BAN: LIST MAY TREN WEB" \
+      "1. https://cloud.vast.ai/host/machines -> may moi (2x GTX 1080) -> Settings" \
+      "2. On-demand Price 0.05  (KHONG nhap nham 0.15 vao o nay)" \
+      "   Min bid 0.04 | Storage 0.15 | Upload 3 | Download 2" \
+      "3. Ngay het han xa (vd 2 nam) -> Update Listing" \
+      "4. The may phai hien gia \$0.050/hr/GPU"
+  read -r -p "List xong thi bam Enter de chay self-test... " _
+  run_selftest
+  box "XONG HET" \
+      "- Self-test bao 'reliability' -> doi 1-2 ngay roi: sudo bash $SELF selftest" \
+      "- Xem lai thong tin modem:   sudo bash $SELF port" \
+      "- KHONG chay 'apt upgrade' / 'do-release-upgrade'" \
+      "- KHONG tat may / rut mang / doi khe card khi dang co khach" \
+      "- Earnings -> Payout Account: ket noi PayPal/Wise (tra tien thu Sau, du \$20)"
 }
 
 # ------------------------------------------------------------------ MAIN
@@ -388,11 +464,12 @@ case "${1:-}" in
   port)   load_net_info; print_port_box ;;
   status) echo "Dang o buoc: $(cat "$STATE" 2>/dev/null || echo 1)" ;;
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
+  selftest) run_selftest ;;
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in
       1) stage1 ;; 2) stage2 ;; 3) stage3 ;; 4) stage4 ;;
-      done) ok "May nay da cai xong."; load_net_info; print_port_box ;;
+      done) ok "May nay da cai xong. Lenh huu ich: port | selftest | status"; load_net_info; print_port_box ;;
       *) stage1 ;;
     esac ;;
-  *) echo "Cach dung: sudo bash $SELF  [check|status|port|reset]"; exit 1 ;;
+  *) echo "Cach dung: sudo bash $SELF  [check|status|port|selftest|reset]"; exit 1 ;;
 esac
