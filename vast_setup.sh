@@ -3,7 +3,8 @@
 #  Vast.ai host setup - Ubuntu 22.04 / 24.04 + NVIDIA GPU
 #  Cach dung:
 #    sudo bash vast_setup.sh phase1   (chuan bi he thong, xong thi reboot)
-#    sudo bash vast_setup.sh phase2   (sau reboot: kiem tra, port, bat VM)
+#    sudo bash vast_setup.sh phase2   (sau reboot: SSH key, mo port, huong dan cai Vast)
+#    sudo bash vast_setup.sh phase3   (sau khi cai Vast: dai port, bat VM)
 # ==========================================================
 set -uo pipefail
 
@@ -70,6 +71,8 @@ disable_password_login() {
     /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\n' \
     > /etc/ssh/sshd_config.d/00-vast.conf
+  # ghi ca vao file chinh (trinh cai Vast doc file nay)
+  sed -i '1i PasswordAuthentication no' /etc/ssh/sshd_config
   if sshd -t; then
     systemctl restart ssh
     ok "Da tat dang nhap bang mat khau: $(sshd -T | grep -i '^passwordauthentication')"
@@ -201,120 +204,122 @@ phase1() {
   if ask "Khoi dong lai ngay bay gio?"; then reboot; fi
 }
 
-# ---------------------------------------------------------- PHASE 2
-phase2() {
-  step "1. Kiem tra sau reboot"
-  grep -qE '(intel|amd)_iommu=on' /proc/cmdline && ok "Tham so IOMMU da nap" || err "Thieu tham so IOMMU"
-  dmesg | grep -qi -e "IOMMU enabled" -e "AMD-Vi" && ok "IOMMU dang bat" || warn "Khong thay 'IOMMU enabled' - kiem tra VT-d trong BIOS"
-  if nvidia-smi -L; then ok "GPU hoat dong"; else err "nvidia-smi loi - kiem tra driver"; exit 1; fi
-  if findmnt -no FSTYPE,OPTIONS /var/lib/docker | grep -q 'xfs.*prjquota'; then
-    ok "/var/lib/docker la XFS + quota"; df -h /var/lib/docker
-  else
-    warn "/var/lib/docker chua phai XFS+quota (trinh cai Vast se tu xu ly neu co vung trong)"
-  fi
+# ---------------------------------------------------------- PORT INFO
+PORT_FILE=/root/vast_port_range
 
-  step "2. Cai daemon Vast"
-  if [[ -d /var/lib/vastai_kaalia ]]; then
-    ok "Daemon Vast da duoc cai"
-  else
-    # Vast tu choi cai neu SSH con cho dang nhap bang mat khau
-    if sshd -T 2>/dev/null | grep -qi '^passwordauthentication yes'; then
-      warn "SSH van cho dang nhap bang mat khau - Vast se tu choi cai. Dang xu ly..."
-      ensure_ssh_key
-      disable_password_login || { err "Khong tat duoc mat khau SSH - dung lai."; exit 1; }
-    fi
-    echo
-    echo -e "${YEL}##########################################################${NC}"
-    echo -e "${YEL}#   DEN LUOT BAN: NHAP LENH CAI DAT VAST                 #${NC}"
-    echo -e "${YEL}#                                                        #${NC}"
-    echo -e "${YEL}#   1. Mo trang: https://cloud.vast.ai/host/setup        #${NC}"
-    echo -e "${YEL}#   2. Copy NGUYEN lenh cai dat (lenh co key, co han)    #${NC}"
-    echo -e "${YEL}#      Hoac chi copy rieng doan KEY cung duoc            #${NC}"
-    echo -e "${YEL}#   3. Dan vao day roi bam Enter                         #${NC}"
-    echo -e "${YEL}##########################################################${NC}"
-    echo
-    VCMD=""
-    while [[ -z "$VCMD" ]]; do
-      read -r -p "Dan lenh (hoac key) Vast vao day: " VCMD
-      VCMD="$(echo "$VCMD" | xargs)"
-    done
-    if [[ "$VCMD" =~ ^[0-9a-fA-F]{32,}$ ]]; then
-      # chi dan key -> tu ghep lenh cai dat
-      VCMD="wget https://console.vast.ai/install -O install; python3 install $VCMD --interactive"
-    fi
-    VCMD="${VCMD//sudo /}"                         # dang chay bang root san
-    VCMD="$(echo "$VCMD" | sed 's/history -d[^;]*;\{0,1\}//g')"
-    cd /root || true
-    echo "Dang cai daemon Vast... (lam theo cac cau hoi neu co)"
-    bash -c "$VCMD"
-    rm -f /root/install
-    if [[ -d /var/lib/vastai_kaalia ]]; then
-      ok "Da cai daemon Vast"
-      sleep 20
-    else
-      err "Cai daemon Vast that bai. Kiem tra lai lenh/key (co the da het han) roi chay lai:"
-      err "  sudo bash $0 phase2"
-      exit 1
-    fi
-  fi
-
-  step "3. Dai port cho may nay"
-  CUR="$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null || true)"
-  echo "Dai port hien tai: ${CUR:-chua dat}"
-  echo "Moi may trong CUNG mot mang (cung modem) phai dung dai port KHAC nhau."
-  echo "  May thu 1: 50000-50999   May thu 2: 51000-51999   May thu 3: 52000-52999 ..."
-  read -r -p "Nhap dai port (Enter = giu '${CUR:-50000-50999}'): " PR
-  PR="${PR:-${CUR:-50000-50999}}"
-  echo -n "$PR" > /var/lib/vastai_kaalia/host_port_range
-
+load_net_info() {
+  PR="$(cat "$PORT_FILE" 2>/dev/null || echo 50000-50999)"
   NIC="$(ip route show default | awk '{print $5; exit}')"
   LAN_IP="$(ip -4 -o addr show "$NIC" | awk '{print $4}' | cut -d/ -f1 | head -n1)"
   MAC="$(cat /sys/class/net/"$NIC"/address 2>/dev/null)"
   GW="$(ip route show default | awk '{print $3; exit}')"
   PUB_IP="$(curl -4 -s --max-time 8 ifconfig.me || echo 'khong lay duoc')"
   P_START="${PR%-*}"
+}
 
-  print_port_box() {
-    echo
-    echo -e "${YEL}##########################################################${NC}"
-    echo -e "${YEL}#   DEN LUOT BAN: CAI PORT TREN MODEM                    #${NC}"
-    echo -e "${YEL}##########################################################${NC}"
-    echo -e "  Vao trang modem      : ${GRN}http://$GW${NC}"
-    echo
-    echo -e "  [1] NAT -> Virtual Server (hoac Port Forwarding):"
-    echo -e "      Cong ngoai       : ${GRN}$PR${NC}"
-    echo -e "      Cong trong       : ${GRN}$PR${NC}"
-    echo -e "      IP may nay       : ${GRN}$LAN_IP${NC}"
-    echo -e "      Giao thuc        : ${GRN}TCP + UDP (Both)${NC}"
-    echo -e "      (Neu day la MAY DUY NHAT o mang nay: co the dung DMZ -> $LAN_IP)"
-    echo
-    echo -e "  [2] LAN -> DHCP Reservation (co dinh IP):"
-    echo -e "      IP               : ${GRN}$LAN_IP${NC}"
-    echo -e "      MAC              : ${GRN}$MAC${NC}"
-    echo
-    echo -e "  [3] Kiem tra tren portchecker.co:"
-    echo -e "      IP public        : ${GRN}$PUB_IP${NC}"
-    echo -e "      Port             : ${GRN}$P_START${NC}"
-    echo -e "${YEL}##########################################################${NC}"
-  }
-  print_port_box
-  ok "Da luu dai port $PR"
-
-  # Mo tam 1 port de ban kiem tra tu ngoai vao
+print_port_box() {
   echo
-  if ask "Mo tam port $P_START de kiem tra bang portchecker.co sau khi cai modem?"; then
-    python3 -m http.server "$P_START" --bind 0.0.0.0 >/dev/null 2>&1 &
-    HTTP_PID=$!
-    echo "Dang mo port $P_START. Vao portchecker.co: IP $PUB_IP, port $P_START."
-    read -r -p "Bam Enter sau khi kiem tra xong (Open = dung, Closed = xem lai modem)... " _
-    kill "$HTTP_PID" 2>/dev/null || true
+  echo -e "${YEL}##########################################################${NC}"
+  echo -e "${YEL}#   THONG TIN CAI PORT TREN MODEM                        #${NC}"
+  echo -e "${YEL}##########################################################${NC}"
+  echo -e "  Vao trang modem      : ${GRN}http://$GW${NC}"
+  echo
+  echo -e "  [1] NAT -> Virtual Server (hoac Port Forwarding):"
+  echo -e "      Cong ngoai       : ${GRN}$PR${NC}"
+  echo -e "      Cong trong       : ${GRN}$PR${NC}"
+  echo -e "      IP may nay       : ${GRN}$LAN_IP${NC}"
+  echo -e "      Giao thuc        : ${GRN}TCP + UDP (Both)${NC}"
+  echo -e "      (Neu day la MAY DUY NHAT o mang nay: co the dung DMZ -> $LAN_IP)"
+  echo
+  echo -e "  [2] LAN -> DHCP Reservation (co dinh IP):"
+  echo -e "      IP               : ${GRN}$LAN_IP${NC}"
+  echo -e "      MAC              : ${GRN}$MAC${NC}"
+  echo
+  echo -e "  [3] Kiem tra tren https://portchecker.co :"
+  echo -e "      IP public        : ${GRN}$PUB_IP${NC}"
+  echo -e "      Port             : ${GRN}$P_START${NC}"
+  echo -e "${YEL}##########################################################${NC}"
+}
+
+# ---------------------------------------------------------- PHASE 2
+# Sau reboot: kiem tra -> SSH key -> mo port -> huong dan cai Vast bang tay
+phase2() {
+  step "BUOC 1/4. Kiem tra sau reboot"
+  grep -qE '(intel|amd)_iommu=on' /proc/cmdline && ok "Tham so IOMMU da nap" || err "Thieu tham so IOMMU"
+  dmesg | grep -qi -e "IOMMU enabled" -e "AMD-Vi" && ok "IOMMU dang bat" || warn "Khong thay 'IOMMU enabled' - kiem tra VT-d trong BIOS"
+  if nvidia-smi -L; then ok "GPU hoat dong (so card o tren)"; else err "nvidia-smi loi - kiem tra driver"; exit 1; fi
+  if findmnt -no FSTYPE,OPTIONS /var/lib/docker | grep -q 'xfs.*prjquota'; then
+    ok "/var/lib/docker la XFS + quota"; df -h /var/lib/docker
   else
-    read -r -p "Cai modem xong thi bam Enter de tiep tuc... " _
+    warn "/var/lib/docker chua phai XFS+quota (trinh cai Vast se tu xu ly neu co vung trong)"
   fi
 
-  step "4. Bat VM"
+  step "BUOC 2/4. SSH key + tat dang nhap bang mat khau (Vast bat buoc)"
+  ensure_ssh_key
+  if sshd -T 2>/dev/null | grep -qi '^passwordauthentication yes'; then
+    disable_password_login || { err "Khong tat duoc mat khau SSH - dung lai, chup man hinh gui ho tro."; exit 1; }
+  else
+    ok "Dang nhap bang mat khau da tat"
+  fi
+
+  step "BUOC 3/4. Mo port tren modem"
+  CUR="$(cat "$PORT_FILE" 2>/dev/null || cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null || true)"
+  echo "Moi may trong CUNG mot mang (cung modem) phai dung dai port KHAC nhau."
+  echo "  May thu 1: 50000-50999   May thu 2: 51000-51999   May thu 3: 52000-52999 ..."
+  read -r -p "Nhap dai port (Enter = '${CUR:-50000-50999}'): " PRIN
+  echo -n "${PRIN:-${CUR:-50000-50999}}" > "$PORT_FILE"
+  load_net_info
+  print_port_box
+  echo
+  echo "Bay gio hay vao modem va cai theo khung tren (muc [1] va [2])."
+  python3 -m http.server "$P_START" --bind 0.0.0.0 >/dev/null 2>&1 &
+  HTTP_PID=$!
+  echo -e "Da mo tam port ${GRN}$P_START${NC} de kiem tra."
+  echo -e "Cai modem xong -> vao ${GRN}https://portchecker.co${NC}, IP ${GRN}$PUB_IP${NC}, port ${GRN}$P_START${NC} -> Check."
+  echo "  Open   = dung, bam Enter de tiep tuc"
+  echo "  Closed = xem lai modem roi Check lai"
+  read -r -p "Bam Enter khi da thay Open... " _
+  kill "$HTTP_PID" 2>/dev/null || true
+
+  step "BUOC 4/4. CAI VAST (BAN TU LAM)"
+  if [[ -d /var/lib/vastai_kaalia ]]; then
+    ok "Daemon Vast da duoc cai roi. Chay tiep:  sudo bash $0 phase3"
+    exit 0
+  fi
+  echo
+  echo -e "${YEL}##########################################################${NC}"
+  echo -e "${YEL}#   DEN LUOT BAN: CAI VAST BANG TAY                      #${NC}"
+  echo -e "${YEL}#                                                        #${NC}"
+  echo -e "${YEL}#   1. Mo trang: https://cloud.vast.ai/host/setup        #${NC}"
+  echo -e "${YEL}#   2. Copy NGUYEN lenh cai dat (bat dau bang wget ...)  #${NC}"
+  echo -e "${YEL}#   3. Dan lenh do vao dong lehien@...:~$ ben duoi,      #${NC}"
+  echo -e "${YEL}#      bam Enter, tra loi cac cau hoi cua trinh cai      #${NC}"
+  echo -e "${YEL}#   4. Cai xong, chay tiep:                              #${NC}"
+  echo -e "${YEL}#        sudo bash vast_setup.sh phase3                  #${NC}"
+  echo -e "${YEL}##########################################################${NC}"
+  echo
+}
+
+# ---------------------------------------------------------- PHASE 3
+# Sau khi da cai Vast: ghi dai port, bat VM, tong ket
+phase3() {
+  step "BUOC 1/3. Kiem tra daemon Vast"
+  if [[ ! -d /var/lib/vastai_kaalia ]]; then
+    err "Chua thay daemon Vast. Hay cai Vast truoc (xem khung vang o cuoi phase2)."
+    exit 1
+  fi
+  ok "Daemon Vast da duoc cai"
+
+  step "BUOC 2/3. Ghi dai port cho Vast"
+  load_net_info
+  echo -n "$PR" > /var/lib/vastai_kaalia/host_port_range
+  ok "Dai port: $PR"
+  # cho daemon chay on dinh
+  sleep 15
+
+  step "BUOC 3/3. Bat VM"
   if [[ -n "$(docker ps -q 2>/dev/null)" ]]; then
-    warn "Dang co container chay (self-test/khach). Bo qua buoc bat VM, chay lai phase2 sau."
+    warn "Dang co container chay (self-test/khach). Doi no xong roi chay lai: sudo bash $0 phase3"
   else
     python3 /var/lib/vastai_kaalia/enable_vms.py on -f 2>&1 | tee /root/vm_log.txt
   fi
@@ -324,7 +329,8 @@ phase2() {
     warn "Da khoi phuc vastai.service"
   fi
   systemctl daemon-reload
-  systemctl enable --now vastai 2>/dev/null || true
+  systemctl enable vastai >/dev/null 2>&1 || true
+  systemctl restart vastai 2>/dev/null || true
 
   step "KET QUA"
   echo "VM check : $(python3 /var/lib/vastai_kaalia/enable_vms.py check 2>/dev/null)"
@@ -333,11 +339,14 @@ phase2() {
   echo "Loi BAR  : $(dmesg | grep -c "can't reserve")  (0 la tot)"
   nvidia-smi -L
   print_port_box
-  echo "Viec con lai: vao cloud.vast.ai -> Machines -> Settings -> List (gia, ngay het han)."
+  echo
+  echo "VIEC CON LAI: vao https://cloud.vast.ai/host/machines -> Settings -> dat gia,"
+  echo "ngay het han xa (vd 1 nam) -> Update Listing."
 }
 
 case "${1:-}" in
   phase1) phase1 ;;
   phase2) phase2 ;;
-  *) echo "Cach dung: sudo bash $0 phase1   |   sudo bash $0 phase2"; exit 1 ;;
+  phase3) phase3 ;;
+  *) echo "Cach dung: sudo bash $0 phase1 | phase2 | phase3"; exit 1 ;;
 esac
