@@ -18,6 +18,69 @@ ask()  { local a; read -r -p "$1 [y/N]: " a; [[ "$a" =~ ^[Yy]$ ]]; }
 REAL_USER="${SUDO_USER:-root}"
 REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
 
+# Tai khoan GitHub chua SSH public key (https://github.com/<ten>.keys)
+GH_USER="chucn2005hn"
+
+# ---------------------------------------------------------- SSH KEY
+# Vast BAT BUOC tat dang nhap SSH bang mat khau truoc khi cai.
+have_key() { [[ -s "$REAL_HOME/.ssh/authorized_keys" ]] && grep -qE '^(ssh-|ecdsa-)' "$REAL_HOME/.ssh/authorized_keys"; }
+
+add_key_line() {
+  local k="$1"
+  echo "$k" | ssh-keygen -lf - >/dev/null 2>&1 || return 1
+  mkdir -p "$REAL_HOME/.ssh"
+  touch "$REAL_HOME/.ssh/authorized_keys"
+  grep -qxF "$k" "$REAL_HOME/.ssh/authorized_keys" || echo "$k" >> "$REAL_HOME/.ssh/authorized_keys"
+  chmod 700 "$REAL_HOME/.ssh"; chmod 600 "$REAL_HOME/.ssh/authorized_keys"
+  chown -R "$REAL_USER:" "$REAL_HOME/.ssh"
+}
+
+ensure_ssh_key() {
+  if have_key; then ok "Da co SSH key cho $REAL_USER"; return 0; fi
+
+  # Cach 1: lay key tu GitHub (neu da them key vao tai khoan GitHub)
+  local gk; gk="$(curl -fsS --max-time 10 "https://github.com/$GH_USER.keys" 2>/dev/null || true)"
+  if [[ -n "$gk" ]]; then
+    while IFS= read -r line; do [[ -n "$line" ]] && add_key_line "$line"; done <<< "$gk"
+    have_key && { ok "Da lay SSH key tu github.com/$GH_USER.keys"; return 0; }
+  fi
+
+  # Cach 2: dan key bang tay
+  echo
+  echo -e "${YEL}##########################################################${NC}"
+  echo -e "${YEL}#   DEN LUOT BAN: DAN SSH KEY CUA MAY WINDOWS            #${NC}"
+  echo -e "${YEL}#                                                        #${NC}"
+  echo -e "${YEL}#   Tren may Windows, mo CMD va go:                      #${NC}"
+  echo -e "${YEL}#     type %USERPROFILE%\\.ssh\\id_ed25519.pub             #${NC}"
+  echo -e "${YEL}#   Copy NGUYEN dong hien ra (bat dau bang ssh-ed25519)  #${NC}"
+  echo -e "${YEL}#   roi dan vao day, bam Enter.                          #${NC}"
+  echo -e "${YEL}##########################################################${NC}"
+  local k
+  while true; do
+    read -r -p "Dan SSH key vao day: " k
+    k="$(echo "$k" | xargs)"
+    if add_key_line "$k"; then ok "Da them SSH key"; return 0; fi
+    err "Key khong hop le - phai bat dau bang 'ssh-ed25519' hoac 'ssh-rsa'. Thu lai."
+  done
+}
+
+disable_password_login() {
+  have_key || { err "Chua co SSH key - KHONG tat mat khau."; return 1; }
+  sed -i '/^\s*PasswordAuthentication/d;/^\s*KbdInteractiveAuthentication/d' \
+    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
+  printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\n' \
+    > /etc/ssh/sshd_config.d/00-vast.conf
+  if sshd -t; then
+    systemctl restart ssh
+    ok "Da tat dang nhap bang mat khau: $(sshd -T | grep -i '^passwordauthentication')"
+    warn "Tu gio chi SSH bang key. Phien SSH dang mo van giu nguyen."
+  else
+    rm -f /etc/ssh/sshd_config.d/00-vast.conf
+    err "Cau hinh SSH loi - da huy thay doi."
+    return 1
+  fi
+}
+
 # ---------------------------------------------------------- PHASE 1
 phase1() {
   export DEBIAN_FRONTEND=noninteractive
@@ -129,18 +192,9 @@ phase1() {
       libvirt-daemon-system psmisc && ok "Da cai qemu $V"
   fi
 
-  step "8. Bao mat SSH (chi dang nhap bang key)"
-  if [[ -s "$REAL_HOME/.ssh/authorized_keys" ]]; then
-    ok "Tim thay SSH key cua user $REAL_USER"
-    if ask "Tat dang nhap SSH bang mat khau? (CHI chon y neu da SSH vao duoc bang key)"; then
-      sed -i '/PasswordAuthentication/d' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
-      echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
-      systemctl restart ssh && ok "Da tat dang nhap bang mat khau"
-    fi
-  else
-    warn "Chua co SSH key cho $REAL_USER - GIU dang nhap bang mat khau."
-    warn "Chep key tu may Windows truoc, roi chay lai phase1 neu muon tat mat khau."
-  fi
+  step "8. SSH key + tat dang nhap bang mat khau (Vast bat buoc)"
+  ensure_ssh_key
+  disable_password_login
 
   step "XONG PHASE 1"
   echo "Tiep theo: reboot, roi chay:  sudo bash $0 phase2"
@@ -163,6 +217,12 @@ phase2() {
   if [[ -d /var/lib/vastai_kaalia ]]; then
     ok "Daemon Vast da duoc cai"
   else
+    # Vast tu choi cai neu SSH con cho dang nhap bang mat khau
+    if sshd -T 2>/dev/null | grep -qi '^passwordauthentication yes'; then
+      warn "SSH van cho dang nhap bang mat khau - Vast se tu choi cai. Dang xu ly..."
+      ensure_ssh_key
+      disable_password_login || { err "Khong tat duoc mat khau SSH - dung lai."; exit 1; }
+    fi
     echo
     echo -e "${YEL}##########################################################${NC}"
     echo -e "${YEL}#   DEN LUOT BAN: NHAP LENH CAI DAT VAST                 #${NC}"
