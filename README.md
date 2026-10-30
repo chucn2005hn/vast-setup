@@ -7,6 +7,63 @@
 
 ---
 
+## ⭐ SAO CHÉP THEO THỨ TỰ (chỉ cần làm theo mục này)
+
+Thay `IP_MAY` bằng IP máy mới (xem ở bước *"Kiem tra cau hinh"* hoặc gõ `ip -4 -br addr` trên máy, dạng `192.168.1.x`). Thay `lehien` nếu lúc cài Ubuntu bạn đặt tên user khác.
+🪟 = gõ trên **CMD của máy Windows** (dòng `C:\Users\...>`) · 🐧 = gõ trên **máy Ubuntu** (dòng `...@...:~$`)
+
+**Chỉ làm 1 lần trên máy Windows (đã có key thì bỏ qua):**
+
+🪟 **Lệnh A** – tạo SSH key (Enter 3 lần):
+```
+ssh-keygen -t ed25519
+```
+🪟 **Lệnh B** – hiện key, copy dòng hiện ra rồi dán vào https://github.com/settings/ssh/new (Title: `may-windows`) → **Add SSH key**:
+```
+type %USERPROFILE%\.ssh\id_ed25519.pub
+```
+
+**Mỗi máy mới:**
+
+🐧 **Lệnh 1** – ngồi trực tiếp ở máy mới, đăng nhập rồi dán (chạy lần 1):
+```
+sudo apt update && sudo apt install -y openssh-server wget && wget -O vast_setup.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup.sh && sudo bash vast_setup.sh
+```
+→ Hỏi số card: gõ số card đã cắm · hỏi `[y/N]`: gõ `y` · cuối cùng `y` để khởi động lại.
+
+🪟 **Lệnh 2** – đợi 2–3 phút, SSH vào máy (từ giờ làm qua máy Windows được):
+```
+ssh lehien@IP_MAY
+```
+🐧 **Lệnh 3** – chạy lần 2 (cài driver) → `y` khởi động lại:
+```
+sudo bash vast_setup.sh
+```
+🪟 **Lệnh 2** lại (SSH vào) → 🐧 **Lệnh 3** lại (chạy lần 3):
+- Hỏi *"Máy thứ mấy"* → **Enter** (mỗi máy 1 mạng riêng)
+- **Khung vàng cài port** → vào modem làm theo (xem mục 2) → kiểm tra https://portchecker.co → **Enter**
+- **Khung vàng CÀI VAST** → mở https://cloud.vast.ai/host/setup → copy nguyên lệnh `wget ...` → dán vào máy → Enter
+  → hỏi `starting open port`: gõ **50000** · `ending open port`: gõ **50999** → đợi đến `=> Done!`
+
+🐧 **Lệnh 3** lại (chạy lần 4):
+- **Khung vàng LIST MÁY** → lên web Settings: On-demand **0.05**, Min bid **0.04**, Storage **0.15**, Upload **3**, Download **2**, ngày hết hạn xa → Update Listing → **Enter**
+- **Khung vàng API KEY** → https://cloud.vast.ai/manage-keys/ → + New → copy → dán vào máy → Enter
+- Self-test báo `Reliability ... > 0.9` → **bình thường**, xong.
+
+🐧 **Lệnh 4** – 1–2 ngày sau, khi độ tin cậy > 90%:
+```
+sudo bash vast_setup.sh selftest
+```
+
+**Lệnh hữu ích khác (🐧):**
+```
+sudo bash vast_setup.sh check      # kiem tra cau hinh
+sudo bash vast_setup.sh port       # xem lai IP, MAC, port de cai modem
+sudo bash vast_setup.sh status     # dang o buoc nao
+```
+
+---
+
 ## 0. Chuẩn bị (làm 1 lần)
 
 **Máy Windows:**
