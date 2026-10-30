@@ -44,7 +44,7 @@ Script tự biết đang ở bước nào. Chỗ nào cần bạn làm tay sẽ 
 | **1** | Kiểm tra cấu hình, cài gói, cấu hình mạng, SSH key + tắt mật khẩu, IOMMU, gỡ driver Ubuntu, tải driver 550, tạo ổ Docker NVMe | Nhập số card đã cắm. Gõ `y` → khởi động lại |
 | **2** | Cài **driver NVIDIA 550** (CUDA 12.4) | Gõ `y` → khởi động lại |
 | **3** | Kiểm tra driver, cài Docker, chuẩn bị ảnh PyTorch hợp GTX 1080, **hiện thông tin mở port** | **Cài modem** theo khung vàng → kiểm tra portchecker → Enter. Rồi **cài Vast bằng tay** (khung vàng) |
-| **4** | Ghi dải port, khởi động lại daemon, tổng kết | **List máy** trên web |
+| **4** | Ghi dải port, tổng kết, cài công cụ `vastai`, tự tìm ID máy, **chạy self-test** | **List máy** trên web, **dán API key** khi được hỏi |
 
 ### Cài Vast bằng tay (sau lần chạy 3)
 1. Mở https://cloud.vast.ai/host/setup → copy **nguyên lệnh** (bắt đầu bằng `wget ...`) → dán vào máy → Enter
@@ -57,6 +57,7 @@ Script tự biết đang ở bước nào. Chỗ nào cần bạn làm tay sẽ 
 |---|---|
 | `sudo bash vast_setup.sh check` | Chỉ kiểm tra cấu hình, không thay đổi gì |
 | `sudo bash vast_setup.sh port` | Hiện lại IP, MAC, dải port để cài modem |
+| `sudo bash vast_setup.sh selftest` | Chạy lại self-test (khi độ tin cậy > 90%) |
 | `sudo bash vast_setup.sh status` | Xem đang ở bước nào |
 | `sudo bash vast_setup.sh reset` | Làm lại từ đầu |
 
@@ -98,15 +99,20 @@ Không tìm thấy → gọi tổng đài: *"mở port 50000–50999 TCP và UDP
 
 ## 3. Sau khi cài xong
 
-1. https://cloud.vast.ai/host/machines → máy mới → **Settings**:
-   **On-demand `0.05`** · **Min bid `0.04`** · **Storage `0.15`** · **Upload `3`** · **Download `2`** · ngày hết hạn xa → **Update Listing**
-2. Sau 1–2 ngày, **độ tin cậy > 90%** → chạy self-test để được **Verified** (lúc máy không có khách):
-   ```
-   pip3 install --user vastai
-   ~/.local/bin/vastai set api-key <API_KEY_CUA_BAN>
-   ~/.local/bin/vastai self-test machine <ID_MAY>
-   ```
-3. **Earnings → Payout Account**: kết nối PayPal / Wise. Vast trả thứ Sáu khi đủ **$20**.
+**List máy** (script lần 4 sẽ nhắc): https://cloud.vast.ai/host/machines → máy mới → **Settings**:
+**On-demand `0.05`** (đừng nhập nhầm 0.15 vào ô này) · **Min bid `0.04`** · **Storage `0.15`** · **Upload `3`** · **Download `2`** · ngày hết hạn xa → **Update Listing**
+
+**API key** (script hỏi để chạy self-test): https://cloud.vast.ai/manage-keys/ → *API Keys* → **+ New** → copy → dán vào máy.
+⚠️ API key **khác** key trong lệnh cài Vast. Không gửi key cho ai.
+
+**Self-test để được Verified:** máy mới độ tin cậy ~**60%**, self-test đòi **> 90%** → sẽ báo `Reliability ... required > 0.9` – **bình thường**.
+Để máy chạy 24/7, **1–2 ngày** sau (xem số % cạnh hình 👍 trên thẻ máy) chạy lại:
+```
+sudo bash vast_setup.sh selftest
+```
+Dòng *"Direct port count advisory"* chỉ là khuyến nghị, bỏ qua.
+
+**Nhận tiền:** Earnings → **Payout Account** → kết nối PayPal / Wise. Vast trả thứ Sáu khi đủ **$20**.
 
 **Không được làm:** `apt upgrade`, `do-release-upgrade`, tắt máy/rút mạng/đổi khe card khi đang có khách, sửa DMZ/Port Forwarding.
 
@@ -129,5 +135,7 @@ Không tìm thấy → gọi tổng đài: *"mở port 50000–50999 TCP và UDP
 | SSH `Permission denied (publickey)` | Key chưa đúng | Ra máy (mật khẩu vẫn dùng được tại chỗ), thêm key vào `~/.ssh/authorized_keys` |
 | portchecker **Closed** | Modem chưa mở / CGNAT | Xem lại mục 2; thử thêm Port Forwarding song song DMZ |
 | Máy **Offline** trên web | Daemon tắt | `sudo systemctl restart vastai` |
+| Self-test: `Reliability ... required > 0.9` | Máy mới, chưa đủ lịch sử | Đợi 1–2 ngày rồi `sudo bash vast_setup.sh selftest` |
+| `vastai set api-key` báo key sai | Dán nhầm key cài Vast | Lấy **API key** ở trang manage-keys |
 
 > **Không đưa lên GitHub:** lệnh cài Vast (có key riêng), API key, mật khẩu.
