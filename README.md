@@ -1,108 +1,133 @@
-# Cài máy cho thuê GPU trên Vast.ai
+# Cài máy cho thuê GPU trên Vast.ai – **kịch bản GTX 1080 / GTX 10xx**
 
-Script `vast_setup.sh` cài một máy Ubuntu mới để cho thuê GPU trên Vast.ai.
-Chạy làm 3 phần. Mỗi khi cần bạn làm tay, script sẽ hiện **khung vàng** hướng dẫn.
+> ⚠️ **Kịch bản này CHỈ dành cho card GTX 1080 / GTX 10xx (đời Pascal).**
+> Card khác (RTX 2060, 3060, 3090...) cách cài khác – **không dùng file này**.
+>
+> Đã chạy thành công trên: 2× GTX 1080, main X99-T8D, 2× Xeon E5-2686 v4, Ubuntu 22.04, modem FPT.
 
 ---
 
-## Chuẩn bị (làm 1 lần)
+## 0. Chuẩn bị (làm 1 lần)
 
-1. **SSH key trên máy Windows** (nếu chưa có): mở CMD, gõ `ssh-keygen -t ed25519`, Enter 3 lần.
-2. **Thêm SSH key vào GitHub** để máy mới tự lấy key, khỏi phải dán:
-   - CMD Windows: `type %USERPROFILE%\.ssh\id_ed25519.pub` → copy dòng hiện ra
-   - Mở https://github.com/settings/ssh/new → Title: `may-windows` → dán vào ô Key → **Add SSH key**
+**Máy Windows:**
+1. Nếu chưa có SSH key: mở **CMD**, gõ `ssh-keygen -t ed25519`, Enter 3 lần.
+2. Thêm key vào GitHub để máy mới **tự lấy key**, khỏi phải dán:
+   - CMD: `type %USERPROFILE%\.ssh\id_ed25519.pub` → copy dòng hiện ra
+   - Mở https://github.com/settings/ssh/new → Title `may-windows` → dán vào ô Key → **Add SSH key**
 
-## Chuẩn bị máy mới
-
-- Cài **Ubuntu 22.04** lên ổ **NVMe** (chừa trống phần lớn ổ, script sẽ dùng cho Docker).
+**Máy mới:**
+- Cài **Ubuntu Server 22.04** lên ổ **NVMe**, **chừa trống > 150GB** (khi cài chọn LVM, không mở rộng hết ổ).
 - Chỉ cắm **1 dây mạng**.
-- BIOS: bật **VT-x** và **VT-d** (Intel VT for Directed I/O).
+- BIOS: bật **Intel Virtualization Technology (VT-x)**, **VT-d**, **Above 4G Decoding**; **tắt Secure Boot**.
+- Main 2 CPU: khe nối với CPU2 chỉ chạy khi **lắp đủ 2 CPU**. 2 card ở 2 CPU khác nhau **vẫn chạy bình thường**.
 
 ---
 
-## Phần 1 – Chuẩn bị hệ thống (ngồi trực tiếp ở máy mới)
+## 1. Lệnh duy nhất
+
+Ngồi trực tiếp ở máy mới (lần đầu), đăng nhập rồi dán:
 
 ```
-sudo apt update && sudo apt install -y openssh-server wget && wget -O vast_setup.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup.sh && sudo bash vast_setup.sh phase1
+sudo apt update && sudo apt install -y openssh-server wget && wget -O vast_setup.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup.sh && sudo bash vast_setup.sh
 ```
 
-- Hỏi `[y/N]` → gõ `y`.
-- Nếu hiện khung **DÁN SSH KEY** → làm theo khung.
-- Cuối cùng chọn `y` để khởi động lại.
-
-## Phần 2 – SSH, mở port, hướng dẫn cài Vast
-
-Sau khi máy khởi động lại (đợi 2 phút), từ Windows: `ssh <user>@<IP máy mới>` rồi:
+Sau **mỗi lần khởi động lại**, SSH vào (`ssh <user>@<IP máy>`) và chạy lại **đúng lệnh**:
 
 ```
-sudo bash vast_setup.sh phase2
+sudo bash vast_setup.sh
 ```
 
-- Hỏi **"máy thứ mấy"** trong mạng đó:
-  - Mỗi máy **1 mạng riêng** → **Enter** (= máy 1, port `50000-50999`)
-  - **Nhiều máy chung 1 modem** → máy đầu nhập `1`, máy sau `2`, `3`... (script tự chọn port `51000-51999`, `52000-52999`...)
-- Khung **THÔNG TIN CÀI PORT** hiện ra → làm theo mục **Mở port** bên dưới.
-- Kiểm tra trên https://portchecker.co → **Open** thì bấm Enter.
-- Khung **CÀI VAST BẰNG TAY** hiện ra → làm theo:
-  1. Mở https://cloud.vast.ai/host/setup
-  2. Copy **nguyên lệnh** cài đặt (bắt đầu bằng `wget ...`)
-  3. Dán vào máy, Enter, trả lời các câu hỏi của trình cài
+Script tự biết đang ở bước nào. Chỗ nào cần bạn làm tay sẽ hiện **khung vàng**.
 
-## Mở port (mỗi mạng/modem làm 1 lần)
+| Lần chạy | Script làm gì | Bạn làm gì |
+|---|---|---|
+| **1** | Kiểm tra cấu hình, cài gói, cấu hình mạng, SSH key + tắt mật khẩu, IOMMU, gỡ driver Ubuntu, tải driver 550, tạo ổ Docker NVMe | Nhập số card đã cắm. Gõ `y` → khởi động lại |
+| **2** | Cài **driver NVIDIA 550** (CUDA 12.4) | Gõ `y` → khởi động lại |
+| **3** | Kiểm tra driver, cài Docker, chuẩn bị ảnh PyTorch hợp GTX 1080, **hiện thông tin mở port** | **Cài modem** theo khung vàng → kiểm tra portchecker → Enter. Rồi **cài Vast bằng tay** (khung vàng) |
+| **4** | Ghi dải port, khởi động lại daemon, tổng kết | **List máy** trên web |
 
-Script in sẵn **IP máy, MAC, IP public, dải port** trong khung vàng – chỉ cần chép vào modem.
+### Cài Vast bằng tay (sau lần chạy 3)
+1. Mở https://cloud.vast.ai/host/setup → copy **nguyên lệnh** (bắt đầu bằng `wget ...`) → dán vào máy → Enter
+2. `starting open port` → **50000**, `ending open port` → **50999** (máy thứ 2 cùng modem: 51000 / 51999 …)
+3. Đợi thấy **`NCCL test ok`** và **`=> Done!`**. Bước *"Pulling default pytorch image"* có thể đứng im 10–20 phút – **cứ đợi**.
+4. Chạy `sudo bash vast_setup.sh` (lần 4)
 
-**Bước 0 – Mạng có IP public không?**
-Vào trang modem (thường `http://192.168.1.1`, tài khoản/mật khẩu in ở tem dưới đáy modem) → **Status / Trạng thái** → xem **WAN IP**.
-- **Trùng** với IP public script in ra → OK, làm tiếp.
-- Dạng `100.x.x.x`, `10.x.x.x`, `172.16–31.x.x` → bị **CGNAT**, mở port vô ích. Gọi tổng đài nhà mạng: *"cho tôi xin IP public động"* (thường miễn phí).
+### Lệnh phụ
+| Lệnh | Tác dụng |
+|---|---|
+| `sudo bash vast_setup.sh check` | Chỉ kiểm tra cấu hình, không thay đổi gì |
+| `sudo bash vast_setup.sh port` | Hiện lại IP, MAC, dải port để cài modem |
+| `sudo bash vast_setup.sh status` | Xem đang ở bước nào |
+| `sudo bash vast_setup.sh reset` | Làm lại từ đầu |
 
-**Bước 1 – Mở port (chọn 1 trong 2):**
-- **Cách A – DMZ (dễ nhất, nên dùng):** NAT → **DMZ** → Bật → IP = IP máy → Lưu.
-- **Cách B – Virtual Server / Port Forwarding:** cổng ngoài & trong = dải port (vd `50000-50999`), IP = IP máy, giao thức **TCP+UDP**.
+---
 
-**Nhiều máy chung 1 modem:**
+## 2. Mở port trên modem
 
-| Máy | Nhập khi script hỏi | Dải port | Cách mở port |
+Script in sẵn **IP máy, MAC, IP public, dải port** – chỉ cần chép vào modem.
+
+**Bước 0 – Mạng có IP public không?** Modem → Status → **WAN IP** phải **trùng** IP public script in ra.
+Nếu WAN IP dạng `100.x` / `10.x` / `172.16–31.x` → bị **CGNAT** → gọi nhà mạng xin **IP public** (thường miễn phí).
+
+**Bước 1 – Mở port:**
+- **Mỗi máy 1 mạng riêng** → dùng **DMZ** → IP máy (dễ nhất).
+- **Nhiều máy chung 1 modem:**
+
+| Máy | Nhập khi script hỏi | Dải port | Cách mở |
 |---|---|---|---|
-| Máy 1 | `1` | 50000-50999 | **DMZ** → IP máy 1 (hoặc Virtual Server) |
-| Máy 2 | `2` | 51000-51999 | **Virtual Server** mới → IP máy 2 |
-| Máy 3 | `3` | 52000-52999 | **Virtual Server** mới → IP máy 3 |
+| Máy 1 | `1` | 50000-50999 | **DMZ** → IP máy 1 |
+| Máy 2 | `2` | 51000-51999 | **Port Forwarding** riêng → IP máy 2 |
+| Máy 3 | `3` | 52000-52999 | **Port Forwarding** riêng → IP máy 3 |
 
-- DMZ chỉ trỏ được **1 máy** → giữ DMZ cho máy 1, **không sửa**.
-- Mỗi máy sau thêm **1 dòng Virtual Server riêng**, đúng dải port + IP trong khung vàng.
-- Mỗi máy đều phải **cố định IP** (bước 2).
+**Bước 2 – Cố định IP:** DHCP Reservation / IP MAC binding → MAC + IP trong khung vàng.
 
-**Bước 2 – Cố định IP máy:** LAN → **DHCP Reservation / Static IP** → nhập IP + MAC.
+**Bước 3 – Kiểm tra:** https://portchecker.co → IP public + port đầu dải → **Open**. (Kiểm tra bằng điện thoại **4G**, không dùng wifi cùng mạng.)
 
-**Bước 3 – Kiểm tra:** https://portchecker.co → IP public + port đầu dải → phải **Open**.
-Kiểm tra bằng máy/điện thoại **dùng 4G**, không dùng wifi cùng mạng.
+### Đường dẫn trong modem
 
-| Nhà mạng | Đường dẫn thường gặp trong modem |
-|---|---|
-| **FPT** | Network → NAT → *IPv4 NAT Type*: chọn **DMZ** hoặc **Virtual Server**. Cố định IP: Network → LAN → DHCP Reservation. Hoặc app **Hi FPT** → Modem → Mở port |
-| **Viettel** | Advance Setup / Nâng cao → NAT → **DMZ** hoặc **Port Forwarding**. Hoặc app **My Viettel** |
-| **VNPT** | Advanced / Nâng cao → NAT → **DMZ Host** hoặc **Virtual Servers** |
+| Modem | Xem WAN IP | Cố định IP | DMZ | Port Forwarding |
+|---|---|---|---|---|
+| **FPT – giao diện "Home Gateway"** (thanh xanh có ổ khoá) | Gateway Status → *IPv4 Addressing* | Advanced Setup → **LAN Basic** → *3. IP MAC binding* → Add | **Security Setup → DMZ Hosting** → Enable → IP → Apply | **Security Setup → Port Forwarding**: IP máy, *TCP/UDP Port* = `50000`, Protocol **Both**, WAN `50000`–`50999` → Add |
+| **FPT – đời mới** (menu Network/Access) | Status | Network → LAN → DHCP Reservation | Network → NAT → *IPv4 NAT Type* = **DMZ** | Network → NAT → **Virtual Server** |
+| **Viettel** | Status | LAN → DHCP | Advance → NAT → **DMZ** | Advance → NAT → **Port Forwarding** |
+| **VNPT** | Status | LAN → DHCP | Advanced → NAT → **DMZ Host** | Advanced → NAT → **Virtual Servers** |
 
-Không tìm thấy mục nào → gọi tổng đài: *"mở port 50000–50999 TCP và UDP về IP 192.168.1.x"* (IP máy trong khung vàng).
-
-## Phần 3 – Bật VM, tổng kết
-
-```
-sudo bash vast_setup.sh phase3
-```
-
-Cuối cùng vào https://cloud.vast.ai/host/machines → **Settings** → đặt giá, ngày hết hạn → **Update Listing**.
+Không tìm thấy → gọi tổng đài: *"mở port 50000–50999 TCP và UDP về IP 192.168.1.x"*.
 
 ---
 
-## Gặp lỗi
+## 3. Sau khi cài xong
 
-| Lỗi | Cách xử lý |
-|---|---|
-| `SSH password login is enabled` khi cài Vast | Chạy lại `sudo bash vast_setup.sh phase2` (script tự tắt mật khẩu) |
-| portchecker báo **Closed** | Xem lại IP/port trên modem; thử dùng **DMZ** nếu chỉ có 1 máy ở mạng đó |
-| `nvidia-smi` lỗi | Driver chưa cài xong → chạy lại phase1 rồi khởi động lại |
-| Máy hiện **Offline** sau khi bật VM | `sudo systemctl restart vastai` |
+1. https://cloud.vast.ai/host/machines → máy mới → **Settings**:
+   **On-demand `0.05`** · **Min bid `0.04`** · **Storage `0.15`** · **Upload `3`** · **Download `2`** · ngày hết hạn xa → **Update Listing**
+2. Sau 1–2 ngày, **độ tin cậy > 90%** → chạy self-test để được **Verified** (lúc máy không có khách):
+   ```
+   pip3 install --user vastai
+   ~/.local/bin/vastai set api-key <API_KEY_CUA_BAN>
+   ~/.local/bin/vastai self-test machine <ID_MAY>
+   ```
+3. **Earnings → Payout Account**: kết nối PayPal / Wise. Vast trả thứ Sáu khi đủ **$20**.
 
-> Không đưa lên đây: lệnh cài Vast (có key riêng), API key, mật khẩu.
+**Không được làm:** `apt upgrade`, `do-release-upgrade`, tắt máy/rút mạng/đổi khe card khi đang có khách, sửa DMZ/Port Forwarding.
+
+> **VM:** GTX 1080 **không chạy được VM** của Vast (ảnh VM của Vast không hỗ trợ Pascal). Máy chỉ cho thuê **Docker** – không ảnh hưởng nhiều, đa số khách dùng Docker.
+
+---
+
+## 4. Gặp lỗi
+
+| Lỗi | Nguyên nhân | Cách sửa |
+|---|---|---|
+| Cài Vast: `SSH password login is enabled` | File `50-cloud-init.conf` bật mật khẩu | `sudo bash vast_setup.sh` (bước 3 tự sửa) hoặc xem mục SSH bên dưới |
+| Cài Vast: `Install failed` ngay sau *Testing 2 gpus for NCCL* | Driver CUDA ≥ 12.8 → Vast cài PyTorch mới không chạy trên GTX 1080 | `nvidia-smi` phải ra **CUDA 12.4**. Nếu không: `echo -n 2 \| sudo tee /root/vast_stage` rồi chạy lại script |
+| NCCL lỗi `cuda>=12.6, please update your driver` | Ảnh `pytorch:latest` mới | `sudo docker pull pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime && sudo docker tag pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime pytorch/pytorch:latest` |
+| Đổi khe card xong **mất mạng** (đèn mạng tắt) | Tên card mạng đổi | Script đã cấu hình tự nhận. Máy cũ: ra máy gõ `ip -br link` → `sudo dhclient <tên en...>` |
+| Đổi khe card xong **không nhận ổ / không boot** | Khe đó dùng chung đường với NVMe | Trả card về khe cũ, chọn khe khác |
+| `lspci` chỉ thấy 1 card | Thiếu nguồn 8-pin / khe không chạy | Cắm lại nguồn, đổi khe, bật *Above 4G Decoding*, lắp đủ 2 CPU |
+| SSH `Connection timed out` | Máy tắt / khác mạng / mất mạng | Kiểm tra máy, cùng mạng chưa |
+| SSH `Connection refused` | Máy chưa khởi động xong | Đợi 2–3 phút |
+| SSH `Permission denied (publickey)` | Key chưa đúng | Ra máy (mật khẩu vẫn dùng được tại chỗ), thêm key vào `~/.ssh/authorized_keys` |
+| portchecker **Closed** | Modem chưa mở / CGNAT | Xem lại mục 2; thử thêm Port Forwarding song song DMZ |
+| Máy **Offline** trên web | Daemon tắt | `sudo systemctl restart vastai` |
+
+> **Không đưa lên GitHub:** lệnh cài Vast (có key riêng), API key, mật khẩu.
