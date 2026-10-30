@@ -209,6 +209,7 @@ PORT_FILE=/root/vast_port_range
 
 load_net_info() {
   PR="$(cat "$PORT_FILE" 2>/dev/null || echo 50000-50999)"
+  MNO="$(cat /root/vast_machine_no 2>/dev/null || echo 1)"
   NIC="$(ip route show default | awk '{print $5; exit}')"
   LAN_IP="$(ip -4 -o addr show "$NIC" | awk '{print $4}' | cut -d/ -f1 | head -n1)"
   MAC="$(cat /sys/class/net/"$NIC"/address 2>/dev/null)"
@@ -220,24 +221,43 @@ load_net_info() {
 print_port_box() {
   echo
   echo -e "${YEL}##########################################################${NC}"
-  echo -e "${YEL}#   THONG TIN CAI PORT TREN MODEM                        #${NC}"
+  echo -e "${YEL}#   THONG TIN CAI PORT TREN MODEM (MANG NAY)             #${NC}"
   echo -e "${YEL}##########################################################${NC}"
-  echo -e "  Vao trang modem      : ${GRN}http://$GW${NC}"
+  echo -e "  Trang modem          : ${GRN}http://$GW${NC}"
+  echo -e "  (Tai khoan/mat khau modem: xem tem duoi day modem)"
   echo
-  echo -e "  [1] NAT -> Virtual Server (hoac Port Forwarding):"
-  echo -e "      Cong ngoai       : ${GRN}$PR${NC}"
-  echo -e "      Cong trong       : ${GRN}$PR${NC}"
-  echo -e "      IP may nay       : ${GRN}$LAN_IP${NC}"
-  echo -e "      Giao thuc        : ${GRN}TCP + UDP (Both)${NC}"
-  echo -e "      (Neu day la MAY DUY NHAT o mang nay: co the dung DMZ -> $LAN_IP)"
+  echo -e "  [0] KIEM TRA IP PUBLIC (lam truoc):"
+  echo -e "      Vao modem -> Status/Trang thai -> tim 'WAN IP'"
+  echo -e "      Phai TRUNG voi   : ${GRN}$PUB_IP${NC}"
+  echo -e "      Neu WAN IP la 100.x / 10.x / 172.16-31.x => mang bi CGNAT,"
+  echo -e "      mo port vo ich -> goi tong dai nha mang xin 'IP public' (thuong mien phi)."
   echo
-  echo -e "  [2] LAN -> DHCP Reservation (co dinh IP):"
+  if [[ "$MNO" == "1" ]]; then
+    echo -e "  [1] MAY THU 1 TRONG MANG NAY - chon 1 trong 2 cach:"
+    echo -e "      CACH A - DMZ (de nhat):"
+    echo -e "        NAT -> DMZ -> Bat (Enable) -> IP: ${GRN}$LAN_IP${NC} -> Luu"
+    echo -e "        (Sau nay them may thu 2, 3... van giu DMZ cho may nay,"
+    echo -e "         cac may sau dung Virtual Server rieng)"
+    echo -e "      CACH B - Virtual Server / Port Forwarding:"
+  else
+    echo -e "  [1] MAY THU $MNO TRONG MANG NAY - BAT BUOC dung Virtual Server"
+    echo -e "      (DMZ chi tro duoc 1 may - GIU NGUYEN DMZ cua may thu 1, khong sua)"
+    echo -e "      Them 1 dong Virtual Server / Port Forwarding MOI:"
+  fi
+  echo -e "        Ten              : ${GRN}vast-may$MNO${NC}"
+  echo -e "        Cong ngoai       : ${GRN}$PR${NC}"
+  echo -e "        Cong trong       : ${GRN}$PR${NC}"
+  echo -e "        IP may nay       : ${GRN}$LAN_IP${NC}"
+  echo -e "        Giao thuc        : ${GRN}TCP + UDP (Both)${NC}"
+  echo
+  echo -e "  [2] Co dinh IP: LAN -> DHCP Reservation / Static IP:"
   echo -e "      IP               : ${GRN}$LAN_IP${NC}"
   echo -e "      MAC              : ${GRN}$MAC${NC}"
   echo
-  echo -e "  [3] Kiem tra tren https://portchecker.co :"
-  echo -e "      IP public        : ${GRN}$PUB_IP${NC}"
-  echo -e "      Port             : ${GRN}$P_START${NC}"
+  echo -e "  [3] Kiem tra: https://portchecker.co"
+  echo -e "      IP               : ${GRN}$PUB_IP${NC}"
+  echo -e "      Port             : ${GRN}$P_START${NC}   -> phai ra Open"
+  echo -e "      (Kiem tra bang may tinh/dien thoai bat 4G, KHONG dung wifi cung mang)"
   echo -e "${YEL}##########################################################${NC}"
 }
 
@@ -263,11 +283,21 @@ phase2() {
   fi
 
   step "BUOC 3/4. Mo port tren modem"
-  CUR="$(cat "$PORT_FILE" 2>/dev/null || cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null || true)"
-  echo "Moi may trong CUNG mot mang (cung modem) phai dung dai port KHAC nhau."
-  echo "  May thu 1: 50000-50999   May thu 2: 51000-51999   May thu 3: 52000-52999 ..."
-  read -r -p "Nhap dai port (Enter = '${CUR:-50000-50999}'): " PRIN
-  echo -n "${PRIN:-${CUR:-50000-50999}}" > "$PORT_FILE"
+  echo "May nay la MAY THU MAY trong cung 1 mang (cung 1 modem)?"
+  echo "  - Moi may 1 mang rieng       -> Enter (= may thu 1)"
+  echo "  - 2 may chung 1 modem        -> may dau nhap 1, may sau nhap 2"
+  echo "  - 3 may chung 1 modem        -> 1, 2, 3 ..."
+  OLD_NO="$(cat /root/vast_machine_no 2>/dev/null || echo 1)"
+  while true; do
+    read -r -p "May thu may? (Enter = $OLD_NO): " NO
+    NO="${NO:-$OLD_NO}"
+    [[ "$NO" =~ ^[1-9][0-9]?$ ]] && break
+    err "Nhap so tu 1 den 99"
+  done
+  echo -n "$NO" > /root/vast_machine_no
+  P0=$((50000 + (NO - 1) * 1000))
+  echo -n "${P0}-$((P0 + 999))" > "$PORT_FILE"
+  ok "May thu $NO -> dai port ${P0}-$((P0 + 999))"
   load_net_info
   print_port_box
   echo
@@ -277,7 +307,8 @@ phase2() {
   echo -e "Da mo tam port ${GRN}$P_START${NC} de kiem tra."
   echo -e "Cai modem xong -> vao ${GRN}https://portchecker.co${NC}, IP ${GRN}$PUB_IP${NC}, port ${GRN}$P_START${NC} -> Check."
   echo "  Open   = dung, bam Enter de tiep tuc"
-  echo "  Closed = xem lai modem roi Check lai"
+  echo "  Closed = xem lai muc [0] (CGNAT?) va [1] (DMZ/IP dung chua?), Check lai"
+  echo "  Neu ket qua mai Closed: ghi lai, bam Enter de lam tiep, sua modem sau cung duoc"
   read -r -p "Bam Enter khi da thay Open... " _
   kill "$HTTP_PID" 2>/dev/null || true
 
