@@ -339,6 +339,26 @@ enable_vm() {
     warn "Khi may khong co khach, chay:  sudo bash $SELF vm"
     return 0
   fi
+  local ms; ms="$(cat /sys/module/nvidia_drm/parameters/modeset 2>/dev/null)"
+  if [[ "$ms" == "Y" ]]; then
+    warn "nvidia-drm modeset dang BAT -> VM se loi 'IOMMU groups not set up'. Dang tat..."
+    echo "options nvidia-drm modeset=0" > /etc/modprobe.d/nvidia-graphics-drivers-kms.conf
+    grep -q 'nvidia-drm.modeset=0' /etc/default/grub || \
+      sed -i 's/^GRUB_CMDLINE_LINUX="\(.*\)"/GRUB_CMDLINE_LINUX="\1 nvidia-drm.modeset=0"/' /etc/default/grub
+    update-grub >/dev/null 2>&1; update-initramfs -u >/dev/null 2>&1
+    box "CAN KHOI DONG LAI DE TAT MODESET" "Sau khi len lai chay:  sudo bash $SELF vm"
+    ask "Khoi dong lai ngay?" && reboot
+    return 0
+  fi
+  # cai san qemu cung 1 phien ban (mirror Ubuntu hay lech 6.30 / 6.31 -> Vast cai loi)
+  apt-get update -qq >/dev/null 2>&1
+  local QV; QV="$(apt-cache madison qemu-system-x86 | awk '{print $3}' | head -1)"
+  if [[ -n "$QV" ]]; then
+    apt-get install -y --allow-downgrades qemu-system-x86="$QV" qemu-system-common="$QV" \
+      qemu-system-data="$QV" qemu-utils="$QV" qemu-block-extra="$QV" \
+      ovmf libvirt-daemon-system cpu-checker psmisc >/dev/null 2>&1 \
+      && ok "Da cai qemu $QV" || warn "Cai qemu loi - Vast se tu thu lai"
+  fi
   python3 /var/lib/vastai_kaalia/enable_vms.py on -f 2>&1 \
     | grep -v -e Pulling -e Waiting -e Verifying -e complete -e 'Already exists' | tail -n 15
   # script cua Vast co the doi ten dich vu roi bo do -> khoi phuc
@@ -348,7 +368,13 @@ enable_vm() {
   fi
   systemctl daemon-reload; systemctl enable vastai >/dev/null 2>&1; systemctl restart vastai
   local st; st="$(python3 /var/lib/vastai_kaalia/enable_vms.py check 2>/dev/null)"
-  if [[ "$st" == "on" ]]; then ok "VM da bat (web cap nhat sau 15-30 phut)"
+  if [[ "$st" == "on" ]]; then
+    ok "VM da bat tren may"
+    # bao ngay thong tin may len web (ho tro Vast huong dan) -> web hien VM khong phai cho
+    sleep 5
+    python3 /var/lib/vastai_kaalia/send_mach_info.py >/dev/null 2>&1 \
+      && ok "Da gui thong tin may len web (F5 sau 1-2 phut, VM het 'Disabled')" \
+      || warn "Chua gui duoc - chay tay: sudo python3 /var/lib/vastai_kaalia/send_mach_info.py"
   else
     warn "VM chua bat ($st). May VAN cho thue Docker binh thuong."
     echo "  Loi BAR (phai = 0): $(dmesg | grep -c "can't reserve")"
@@ -385,13 +411,16 @@ stage1() {
   disable_password_login || { err "Dung lai - chup man hinh gui ho tro"; exit 1; }
 
   step "1.4 Tham so khoi dong (IOMMU + tat framebuffer, can cho VM)"
-  local P="intel_iommu=on iommu=pt initcall_blacklist=sysfb_init video=efifb:off video=vesafb:off"
+  local P="intel_iommu=on iommu=pt initcall_blacklist=sysfb_init video=efifb:off video=vesafb:off nvidia-drm.modeset=0"
   grep -q AuthenticAMD /proc/cpuinfo && P="${P/intel_iommu/amd_iommu}"
   cp /etc/default/grub /root/grub.bak
   if grep -q '^GRUB_CMDLINE_LINUX=' /etc/default/grub; then
     sed -i "s|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX=\"$P\"|" /etc/default/grub
   else echo "GRUB_CMDLINE_LINUX=\"$P\"" >> /etc/default/grub; fi
   update-grub >/dev/null 2>&1 && ok "Da them: $P"
+
+  # VM cua Vast bat buoc nvidia_drm modeset = N (driver Ubuntu mac dinh bat modeset=1)
+  echo "options nvidia-drm modeset=0" > /etc/modprobe.d/nvidia-graphics-drivers-kms.conf
 
   step "1.5 Driver NVIDIA ($DRIVER_PKG cua Ubuntu)"
   # may tung cai driver .run (kich ban GTX 1080) -> go truoc

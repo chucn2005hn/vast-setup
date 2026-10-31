@@ -1,5 +1,7 @@
 # Cài máy cho thuê GPU trên Vast.ai – **kịch bản CARD RTX** (RTX 3060 12GB, RTX 2060 12GB)
 
+> ✅ **Đã chạy thành công từ A→Z (31/10/2026):** 1× RTX 3060 12GB, main X99-T8D, Xeon E5-2686 v4, Ubuntu 22.04, driver 580, modem FPT dùng chung với máy 1080 (port 40000-40999). Docker cho thuê được (`rentable: true`), **VM bật được**.
+
 > ✅ Dùng cho **RTX 3060 12GB, RTX 2060 12GB** (và RTX 20xx / 30xx / 40xx khác).
 > ❌ **GTX 1080 / GTX 10xx → dùng `vast_setup.sh`** ([README_1080.md](README_1080.md)), KHÔNG dùng file này.
 >
@@ -41,10 +43,14 @@ ssh lehien@IP_MAY
 ```
 sudo bash vast_setup_rtx.sh
 ```
-- Hỏi *"Máy thứ mấy"* → **Enter** (mỗi máy 1 mạng riêng). Nhiều máy chung 1 modem → máy đầu `1`, máy sau `2`, `3`…
+- Hỏi *"Máy thứ mấy"* → gõ **1 số duy nhất** (không gõ `1,2`):
+  - Mỗi máy 1 mạng riêng → **Enter**
+  - Nhiều máy chung 1 modem → máy đầu `1`, máy sau `2`, `3`…
+  - Modem báo **"overlapping with the other rule"** (trùng dải port máy khác) → gõ thẳng dải port mới, vd **`40000-40999`**
 - **Khung vàng cài port** → vào modem làm theo (mục 2) → kiểm tra https://portchecker.co → **Enter**
 - **Khung vàng CÀI VAST** → mở https://cloud.vast.ai/host/setup → copy nguyên lệnh `wget ...` → dán vào máy → Enter
-  → `starting open port`: **50000** · `ending open port`: **50999** (máy 2 cùng modem: 51000 / 51999) → đợi `=> Done!`
+  → `starting open port` / `ending open port`: **đúng dải trong khung vàng** (vd 50000 / 50999, hoặc 40000 / 40999) → đợi `=> Done!`
+  → Sau `Done!` nó còn *"Pulling default pytorch image"* vài phút → **đợi hiện lại `lehien@lehien:~$`** mới chạy tiếp
 
 🐧 **Lệnh 3** lại – **lần chạy 3**:
 - Script tự **bật VM**, tổng kết.
@@ -56,7 +62,8 @@ sudo bash vast_setup_rtx.sh
 | **RTX 2060 12GB** | **0.06** | 0.05 | 0.15 | 3 | 2 |
 
   Ngày hết hạn xa → **Update Listing** → **Enter**
-- **Khung vàng API KEY** → https://cloud.vast.ai/manage-keys/ → **+ New** → copy → dán vào máy → Enter
+- **Khung vàng API KEY** → https://cloud.vast.ai/manage-keys/ → **+ New** → copy → **dán vào máy Ubuntu** (chuột phải) → Enter. ⚠️ **Không gửi key lên chat / cho ai**
+- Script bật VM xong **tự gửi thông tin lên web** → F5 sau 1–2 phút, VM hết *Disabled*
 - Self-test báo `Reliability ... > 0.9` → **bình thường**, xong.
 
 🐧 **10 phút sau khi list** – kiểm tra khách thuê được chưa (thay `<ID_MAY>`):
@@ -69,6 +76,8 @@ sudo vastai search offers "machine_id=$(sudo cat /root/vast_machine_id) verified
 ```
 → `"rentable": true` là xong. `false` → `sudo reboot`, 10 phút sau kiểm tra lại.
 
+> `rentable: true` = máy **đang trưng cho khách thuê**, chưa phải đã có khách. `dph_total` (~0.108 với 3060) = giá **khách trả** (giá card + ổ đĩa + phí Vast). Có khách thì web hiện **#Running D: 1** và **Active Contracts**. Máy mới (độ tin cậy 60%, Unverified) thường **vài giờ – 1–2 ngày** mới có khách đầu; sau 2 ngày vẫn chưa → hạ On-demand còn 0.07.
+
 🐧 **Lệnh 4** – 1–2 ngày sau, khi độ tin cậy > 90% (và máy **không có khách**):
 ```
 sudo bash vast_setup_rtx.sh selftest
@@ -78,8 +87,13 @@ sudo bash vast_setup_rtx.sh selftest
 ```
 sudo bash vast_setup_rtx.sh check      # kiem tra cau hinh (khong thay doi gi)
 sudo bash vast_setup_rtx.sh port       # xem lai IP, MAC, port de cai modem
-sudo bash vast_setup_rtx.sh vm         # bat lai VM (chi khi KHONG co khach)
+sudo bash vast_setup_rtx.sh vm         # bat lai VM (chi khi KHONG co khach) - tu sua modeset, qemu, gui len web
 sudo bash vast_setup_rtx.sh status     # dang o buoc nao
+```
+
+**Kiểm tra VM đủ điều kiện (🐧)** – đúng phải ra `on`, `gpu_type=nvidia_vm`, `active`, `active`, `N`:
+```
+sudo python3 /var/lib/vastai_kaalia/enable_vms.py check; grep gpu_type /var/lib/vastai_kaalia/kaalia.cfg; systemctl is-active vastai libvirtd; sudo cat /sys/module/nvidia_drm/parameters/modeset
 ```
 
 ---
@@ -138,9 +152,19 @@ Không tìm thấy → gọi tổng đài: *"mở port 50000–50999 TCP và UDP
 
 | Lỗi | Cách sửa |
 |---|---|
+| Lần 1 báo `Chua tat duoc mat khau` dù các dòng đều `PasswordAuthentication no` | Bản cũ kiểm tra sai – tải script mới (Lệnh 1). Sửa nhanh tại máy: `sed -i "s/sshd -T \| grep -qi/sshd -T \| grep -i >\/dev\/null/" vast_setup_rtx.sh && sudo bash vast_setup_rtx.sh` |
+| Dán SSH key báo *Key khong hop le* | Phải dán **nguyên dòng** bắt đầu `ssh-ed25519 AAAA...` (thiếu chữ `ssh-ed25519` là lỗi). Lệnh `ssh-keygen` chạy trên **Windows**, không phải Ubuntu |
+| Modem: *The range of new WAN port is overlapping with the other rule* | Dải đó đã có máy khác dùng → chạy lại, ở câu *"Máy thứ mấy"* gõ dải khác vd `40000-40999`, modem mở đúng dải đó, cài Vast nhập 40000 / 40999 |
+| Khung tổng kết hiện **dải port khác** dải đã nhập lúc cài Vast | `echo -n 40000-40999 \| sudo tee /root/vast_port_range /var/lib/vastai_kaalia/host_port_range; echo -n 1 \| sudo tee /root/vast_machine_no; sudo systemctl restart vastai` (thay đúng dải) |
+| `No module named pip` / `Cai cong cu vastai loi` | `sudo apt update && sudo apt install -y python3-pip && sudo bash vast_setup_rtx.sh selftest` |
+| `Waiting for cache lock ... held by process` | Bộ cài Vast đang cài gói ngầm (tối đa 10 phút) → **chờ**, không Ctrl+C. Xem: `ps -fp <số>` |
+| Self-test: `0 offers` / `HTTP 403` | Máy **chưa list** trên web, hoặc API key đã bị xoá → list máy; `sudo vastai set api-key KEY_MOI` |
+| VM: `IOMMU groups not set up for VMs, aborting` | Driver Ubuntu bật **modeset** (Vast cần `N`). Bản mới tự sửa. Tay: `echo "options nvidia-drm modeset=0" \| sudo tee /etc/modprobe.d/nvidia-graphics-drivers-kms.conf && sudo update-initramfs -u && sudo reboot` → kiểm tra `sudo cat /sys/module/nvidia_drm/parameters/modeset` = `N` → `sudo bash vast_setup_rtx.sh vm` |
+| VM: `qemu-system-x86 : Depends: qemu-system-common (= ...6.30) but ...6.31` | `sudo apt update && V=$(apt-cache madison qemu-system-x86 \| awk '{print $3}' \| head -1) && sudo apt install -y --allow-downgrades qemu-system-x86=$V qemu-system-common=$V qemu-system-data=$V qemu-utils=$V qemu-block-extra=$V ovmf libvirt-daemon-system cpu-checker` → `sudo bash vast_setup_rtx.sh vm` |
+| Máy báo VM `on` nhưng web vẫn **VM: Disabled** | `sudo systemctl restart vastai.service && sudo python3 /var/lib/vastai_kaalia/send_mach_info.py` → F5 sau 1–2 phút (hỗ trợ Vast hướng dẫn, đã chạy được) |
 | Cài Vast: `SSH password login is enabled` | `sudo bash vast_setup_rtx.sh` (lần 2 tự sửa SSH), rồi cài Vast lại |
 | VM: `VM Nvidia use count failure ... in use by monitor` / `vm_test ... nvidia-smi` lỗi | Kiểm tra `cat /proc/cmdline` có `initcall_blacklist=sysfb_init`, `dmesg \| grep -c "can't reserve"` = 0. Rồi `sudo bash vast_setup_rtx.sh vm` khi **không có khách** |
-| Máy **Offline** sau khi bật VM | `sudo mv /etc/systemd/system/vastai.service.mask /etc/systemd/system/vastai.service; sudo systemctl daemon-reload; sudo systemctl restart vastai` |
+| Máy **Offline** sau khi bật VM (⚠️ **mv**, KHÔNG xoá file `.mask`) | `sudo mv /etc/systemd/system/vastai.service.mask /etc/systemd/system/vastai.service; sudo systemctl daemon-reload; sudo systemctl restart vastai` |
 | Web hiện **VM: Disabled** khi đang có khách | Bình thường – khách trả máy sẽ tự hiện lại |
 | Đã list nhưng `"rentable": false` | `sudo reboot`, 10 phút sau kiểm tra lại |
 | Bấm **Test machine** trên web báo *No such container* | Hủy bài kiểm tra → `sudo vastai show instances` → còn suất thì `sudo vastai destroy instance <ID>`. Không bấm trước khi đủ 90% |
