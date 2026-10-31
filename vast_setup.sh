@@ -259,7 +259,10 @@ port_step() {
 # ------------------------------------------------------------------ SELF-TEST
 ensure_vastai_cli() {
   if [[ ! -x "$VASTAI" ]]; then
-    apt-get install -y python3-pip >/dev/null 2>&1
+    python3 -m pip --version >/dev/null 2>&1 || {
+      apt-get update -qq >/dev/null 2>&1
+      apt-get install -y python3-pip || { err "Cai python3-pip loi (thu: sudo apt update && sudo apt install -y python3-pip)"; return 1; }
+    }
     python3 -m pip install -q vastai || { err "Cai cong cu vastai loi"; return 1; }
   fi
   [[ -x "$VASTAI" ]] || VASTAI="$(command -v vastai)"
@@ -443,7 +446,14 @@ stage4() {
         "2. Port: ${P_START} / ${P_END}" "3. Xong: sudo bash $SELF"
     exit 1
   fi
-  echo -n "$PR" > /var/lib/vastai_kaalia/host_port_range
+  # Dai port nhap luc cai Vast la dai that -> uu tien dai do
+  local hp_file=/var/lib/vastai_kaalia/host_port_range vast_pr
+  vast_pr="$(tr -d ' \n' < "$hp_file" 2>/dev/null)"
+  if [[ "$vast_pr" =~ ^[0-9]+-[0-9]+$ && "$vast_pr" != "$PR" ]]; then
+    warn "Luc cai Vast ban nhap port $vast_pr (khac $PR) -> dung $vast_pr"
+    echo -n "$vast_pr" > "$PORT_FILE"; echo -n 1 > "$NO_FILE"; load_net_info
+  fi
+  echo -n "$PR" > "$hp_file"
   if [[ -f /etc/systemd/system/vastai.service.mask ]]; then
     mv /etc/systemd/system/vastai.service.mask /etc/systemd/system/vastai.service
     warn "Da khoi phuc vastai.service"
