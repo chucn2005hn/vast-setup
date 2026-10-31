@@ -230,14 +230,23 @@ port_step() {
   echo "May nay la MAY THU MAY trong cung 1 modem?"
   echo "  - Moi may 1 mang rieng -> Enter (= 1)"
   echo "  - Nhieu may chung 1 modem -> may dau 1, may sau 2, 3 ..."
-  local old no; old="$(cat "$NO_FILE" 2>/dev/null || echo 1)"
+  echo "  - Muon tu chon dai port (vd modem bao trung) -> go dai, vd 40000-40999"
+  local old no a b; old="$(cat "$NO_FILE" 2>/dev/null || echo 1)"
   while true; do
-    read -r -p "May thu may? (Enter = $old): " no; no="${no:-$old}"
-    [[ "$no" =~ ^[1-9][0-9]?$ ]] && break; err "Nhap so 1-99"
+    read -r -p "May thu may? (Enter = $old): " no; no="${no:-$old}"; no="${no// /}"
+    if [[ "$no" =~ ^([0-9]{4,5})-([0-9]{4,5})$ ]]; then
+      a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}
+      if (( a >= 1024 && b <= 65535 && b - a >= 99 )); then
+        echo -n "$a-$b" > "$PORT_FILE"; echo -n 1 > "$NO_FILE"; break
+      fi
+      err "Dai port phai trong 1024-65535 va >= 100 port (vd 40000-40999)"; continue
+    fi
+    if [[ "$no" =~ ^[1-9][0-9]?$ ]]; then
+      echo -n "$no" > "$NO_FILE"
+      a=$((50000 + (no - 1) * 1000)); echo -n "${a}-$((a + 999))" > "$PORT_FILE"; break
+    fi
+    err "Nhap 1 so (1, 2, 3...) hoac 1 dai port (vd 40000-40999)"
   done
-  echo -n "$no" > "$NO_FILE"
-  local p0=$((50000 + (no - 1) * 1000))
-  echo -n "${p0}-$((p0 + 999))" > "$PORT_FILE"
   load_net_info
   print_port_box
   python3 -m http.server "$P_START" --bind 0.0.0.0 >/dev/null 2>&1 &
