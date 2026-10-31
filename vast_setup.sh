@@ -157,6 +157,7 @@ ensure_ssh_key() {
     err "Key khong hop le (phai bat dau bang ssh-ed25519 / ssh-rsa). Thu lai."
   done
 }
+ssh_pw_off() { local o; o="$(sshd -T 2>/dev/null)"; grep -qi '^passwordauthentication no' <<<"$o"; }
 disable_password_login() {
   have_key || { err "Chua co SSH key - KHONG tat mat khau."; return 1; }
   sed -i '/^\s*#\?\s*PasswordAuthentication/d;/^\s*KbdInteractiveAuthentication/d' \
@@ -165,11 +166,17 @@ disable_password_login() {
     > /etc/ssh/sshd_config.d/00-vast.conf
   echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config
   mkdir -p /etc/cloud/cloud.cfg.d && echo 'ssh_pwauth: false' > /etc/cloud/cloud.cfg.d/99-vast-ssh.cfg
-  if sshd -t && systemctl restart ssh && sshd -T | grep -qi '^passwordauthentication no'; then
+  mkdir -p /run/sshd; ssh-keygen -A >/dev/null 2>&1 || true
+  local t_out; t_out="$(sshd -t 2>&1)" || { err "Loi cau hinh SSH: $t_out"; }
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+  sleep 1
+  if ssh_pw_off; then
     ok "Da tat dang nhap SSH bang mat khau (chi vao bang key)"
     warn "Dang nhap truc tiep tai may (ban phim + man hinh) van dung mat khau binh thuong."
   else
     err "Chua tat duoc mat khau:"; grep -rn -i PasswordAuthentication /etc/ssh/sshd_config /etc/ssh/sshd_config.d/
+    sshd -T 2>&1 | grep -i -E 'passwordauth|error|fatal' | head -5
+    systemctl --no-pager -l status ssh 2>&1 | tail -5
     return 1
   fi
 }
@@ -394,7 +401,7 @@ stage3() {
   else err "CUDA $cv >= 12.8 - driver sai, NCCL test cua Vast se fail"; exit 1; fi
   local smi pci; smi="$(n_smi_gpus)"; pci="$(n_pci_gpus)"
   [[ "$smi" -eq "$pci" ]] && ok "Driver nhan du $smi card" || warn "Driver nhan $smi/$pci card"
-  sshd -T | grep -qi '^passwordauthentication no' || disable_password_login
+  ssh_pw_off || disable_password_login
 
   step "3.1 Cai Docker + anh test NCCL hop voi GTX 1080"
   if ! command -v docker >/dev/null 2>&1; then
