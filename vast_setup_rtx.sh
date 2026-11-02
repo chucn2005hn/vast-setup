@@ -448,7 +448,7 @@ stage1() {
   if dpkg -l | grep -q "^.i  $DRIVER_PKG "; then ok "$DRIVER_PKG da co"
   else
     apt-mark unhold $(dpkg -l | awk '$2 ~ /nvidia/ {print $2}') >/dev/null 2>&1 || true
-    apt-get install -y "$DRIVER_PKG" || ubuntu-drivers install || { err "Cai driver loi"; exit 1; }
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold "$DRIVER_PKG" || ubuntu-drivers install || { err "Cai driver loi"; exit 1; }
   fi
   apt-mark hold $(dpkg -l | awk '/^ii/ && $2 ~ /nvidia/ && $2 !~ /container/ {print $2}') >/dev/null 2>&1 || true
   ok "Da cai + khoa phien ban driver (khong bi tu cap nhat)"
