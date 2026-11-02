@@ -487,7 +487,7 @@ stage4() {
 # ------------------------------------------------------------------ MAIN
 case "${1:-}" in
   check)  preflight "${2:-}" ;;
-  port)   load_net_info; print_port_box ;;
+  port)   port_step ;;
   status) echo "Dang o buoc: $(cat "$STATE" 2>/dev/null || echo 1)" ;;
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
   selftest) run_selftest ;;
