@@ -405,6 +405,16 @@ enable_vm() {
   echo "vastai : $(systemctl is-active vastai)"
 }
 
+
+# gui ngay thong tin may (VM, mang, card) len web - lenh ho tro Vast huong dan
+push_web() {
+  step "GUI THONG TIN MAY LEN WEB VAST"
+  systemctl restart vastai.service; sleep 5
+  python3 /var/lib/vastai_kaalia/send_mach_info.py ${1:-} 2>&1 | grep -E "speedtest|VM feature|Data sent|rror" | tail -5
+  echo "VM tren may: $(python3 /var/lib/vastai_kaalia/enable_vms.py check 2>/dev/null)"
+  ok "Xong - 1-2 phut sau bam F5 tren web"
+}
+
 # ------------------------------------------------------------------ BUOC 1
 stage1() {
   step "BUOC 1/3 - KIEM TRA + CHUAN BI HE THONG"
@@ -562,10 +572,11 @@ case "${1:-}" in
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
   vm)     enable_vm ;;
   selftest) run_selftest ;;
+  web)    push_web --speedtest ;;
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in
       1) stage1 ;; 2) stage2 ;; 3) stage3 ;;
-      done) ok "May nay da cai xong. Lenh huu ich: port | vm | selftest | status"; load_net_info; print_port_box ;;
+      done) ok "May nay da cai xong. Lenh huu ich: port | vm | web | selftest | status"; load_net_info; print_port_box ;;
       *) stage1 ;;
     esac ;;
   *) echo "Cach dung: sudo bash $SELF  [check|status|port|vm|selftest|reset]"; exit 1 ;;

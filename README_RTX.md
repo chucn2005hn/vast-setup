@@ -89,7 +89,14 @@ sudo bash vast_setup_rtx.sh check      # kiem tra cau hinh (khong thay doi gi)
 sudo bash vast_setup_rtx.sh port       # xem lai IP, MAC, port de cai modem
 sudo bash vast_setup_rtx.sh vm         # bat lai VM (chi khi KHONG co khach) - tu sua modeset, qemu, gui len web
 sudo bash vast_setup_rtx.sh status     # dang o buoc nao
+sudo bash vast_setup_rtx.sh web        # bao ngay len web (VM, mang, card) - dung sau khi bat VM / doi mang / them card
 ```
+
+**Lệnh hỗ trợ Vast hướng dẫn – web chưa hiện VM / mạng mới / card mới (🐧):**
+```
+sudo systemctl restart vastai.service && sudo python3 /var/lib/vastai_kaalia/send_mach_info.py --speedtest
+```
+> Lệnh này chỉ **báo trạng thái** lên web. VM phải bật trên máy trước (`enable_vms.py check` = `on`), nếu chưa thì chạy `sudo bash vast_setup_rtx.sh vm`.
 
 **Kiểm tra VM đủ điều kiện (🐧)** – đúng phải ra `on`, `gpu_type=nvidia_vm`, `active`, `active`, `N`:
 ```

@@ -77,9 +77,16 @@ sudo vastai search offers "machine_id=$(sudo cat /root/vast_machine_id) verified
 - `rentable=true` → đang chờ khách ✅ · `rented=true` → đang có khách ✅
 - `rentable=false, rented=false` → xem mục 3
 
-Đo lại mạng cho Vast (sau khi đổi mạng / web hiện tốc độ cũ):
+**Báo ngay lên web** (VM / mạng mới / card mới) – lệnh hỗ trợ Vast hướng dẫn:
 ```
-sudo python3 /var/lib/vastai_kaalia/send_mach_info.py --speedtest
+sudo systemctl restart vastai.service && sudo python3 /var/lib/vastai_kaalia/send_mach_info.py --speedtest
+```
+hoặc gọn: `sudo bash vast_setup_rtx.sh web`
+
+Web vẫn **VM: Disabled** → kiểm tra trên máy (phải `on`), chưa `on` thì bật rồi báo lại:
+```
+sudo python3 /var/lib/vastai_kaalia/enable_vms.py check
+sudo bash vast_setup_rtx.sh vm
 ```
 Self-test (khi độ tin cậy > 90% và **không có khách**):
 ```
