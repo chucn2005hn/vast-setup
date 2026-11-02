@@ -4,7 +4,8 @@ Chọn đúng loại card đang cắm trong máy rồi bấm vào hướng dẫn
 
 | Card trong máy | Hướng dẫn | Script |
 |---|---|---|
-| **RTX 3060 12GB, RTX 2060 12GB** (và RTX khác) | 👉 [README_RTX.md](README_RTX.md) | `vast_setup_rtx.sh` |
+| **1× RTX 2060 12GB** (lối tắt, đủ kinh nghiệm thực tế) | 👉 [README_2060.md](README_2060.md) | `vast_setup_rtx.sh` |
+| **RTX 3060 12GB, RTX 2060 12GB** (và RTX khác, nhiều card) | 👉 [README_RTX.md](README_RTX.md) | `vast_setup_rtx.sh` |
 | **GTX 1080 / GTX 10xx** | 👉 [README_1080.md](README_1080.md) | `vast_setup.sh` |
 
 ## Lệnh cài nhanh (dán trên máy Ubuntu 22.04 mới)

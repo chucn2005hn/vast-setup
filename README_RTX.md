@@ -152,6 +152,10 @@ Không tìm thấy → gọi tổng đài: *"mở port 50000–50999 TCP và UDP
 
 | Lỗi | Cách sửa |
 |---|---|
+| Web **"GPU PCIE issue"** / self-test **NCCL SIGSEGV** (máy 2 CPU) | Card cắm bên CPU **không có RAM**. Kiểm tra: `for n in /sys/devices/system/node/node*; do echo "$(basename $n): $(awk '/MemTotal/{print int($4/1024/1024)}' $n/meminfo) GB"; done` → node nào 0GB thì khi **hết khách** chia RAM cho cả 2 CPU. Vast tự gỡ cờ sau vài giờ |
+| Hỗ trợ đòi **log PCIe** | `{ nvidia-smi --query-gpu=index,pci.bus_id,pcie.link.gen.current,pcie.link.width.current --format=csv; for d in $(lspci -d 10de: \| awk '/VGA/{print $1}'); do sudo lspci -vv -s $d \| grep -E "LnkSta:\|CESta"; done; sudo dmesg \| grep -c "PCIe Bus Error"; } \| tee ~/pcie_log.txt` (card nghỉ hiện 2.5GT/s là bình thường; chạy nặng phải 8GT/s) |
+| Hỗ trợ đòi **kaalia.log** | `sudo tail -n 200 /var/lib/vastai_kaalia/kaalia.log > ~/kaalia_last200.txt` → Windows: `scp lehien@IP:~/kaalia_last200.txt .` → gửi file |
+| Web hiện **mạng cũ** sau khi đổi mạng | `sudo python3 /var/lib/vastai_kaalia/send_mach_info.py --speedtest` |
 | Lần 1 báo `Chua tat duoc mat khau` dù các dòng đều `PasswordAuthentication no` | Bản cũ kiểm tra sai – tải script mới (Lệnh 1). Sửa nhanh tại máy: `sed -i "s/sshd -T \| grep -qi/sshd -T \| grep -i >\/dev\/null/" vast_setup_rtx.sh && sudo bash vast_setup_rtx.sh` |
 | Dán SSH key báo *Key khong hop le* | Phải dán **nguyên dòng** bắt đầu `ssh-ed25519 AAAA...` (thiếu chữ `ssh-ed25519` là lỗi). Lệnh `ssh-keygen` chạy trên **Windows**, không phải Ubuntu |
 | Modem: *The range of new WAN port is overlapping with the other rule* | Dải đó đã có máy khác dùng → chạy lại, ở câu *"Máy thứ mấy"* gõ dải khác vd `40000-40999`, modem mở đúng dải đó, cài Vast nhập 40000 / 40999 |

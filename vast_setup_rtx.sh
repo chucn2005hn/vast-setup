@@ -106,6 +106,23 @@ preflight() {
     echo -e "          Driver hien tai: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)  CUDA $(cuda_ver)"
   fi
 
+  # RAM theo tung CPU (NUMA): card cam o CPU khong co RAM -> self-test NCCL SIGSEGV, Vast bao loi
+  local nn; nn="$(ls -d /sys/devices/system/node/node* 2>/dev/null | wc -l)"
+  if [[ "$nn" -gt 1 ]]; then
+    local n kb bad=0 dev numa
+    for n in /sys/devices/system/node/node*; do
+      kb="$(awk '/MemTotal/{print $4}' "$n/meminfo")"
+      echo -e "          $(basename "$n"): $((kb/1024/1024))GB RAM"
+      [[ "$kb" -lt 1048576 ]] && bad=1
+    done
+    for dev in $(lspci -D -d 10de: | awk '/VGA|3D/{print $1}'); do
+      numa="$(cat /sys/bus/pci/devices/$dev/numa_node 2>/dev/null)"
+      echo -e "          card $dev -> CPU (node) $numa"
+    done
+    [[ "$bad" -eq 0 ]] && pass "Ca 2 CPU deu co RAM" \
+      || miss "Co CPU KHONG CO RAM (node 0GB)" "Tat may, chia thanh RAM cho CA 2 CPU (khe A1 + E1...). Thieu -> card cam ben CPU do bi loi NCCL/PCIe"
+  fi
+
   # RAM / o dia
   local ram; ram="$(free -g | awk '/^Mem:/{print $2}')"
   [[ "$ram" -ge 16 ]] && pass "RAM ${ram}GB" || miss "RAM chi ${ram}GB" "Nen >= 16GB"
