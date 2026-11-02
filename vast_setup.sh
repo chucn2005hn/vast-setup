@@ -29,6 +29,11 @@
 #     sudo bash vast_setup.sh selftest
 # ==================================================================
 set -uo pipefail
+# cai goi khong bao gio dung lai hoi (needrestart / file cau hinh)
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
+cat > /etc/apt/apt.conf.d/99vast-noninteractive 2>/dev/null <<'APTCONF' || true
+Dpkg::Options { "--force-confdef"; "--force-confold"; };
+APTCONF
 
 GH_USER="chucn2005hn"                 # lay SSH key tu github.com/<ten>.keys
 DRIVER_VER="550.163.01"
