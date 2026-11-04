@@ -114,18 +114,22 @@ preflight() {
   # RAM theo tung CPU (NUMA): card cam o CPU khong co RAM -> self-test NCCL SIGSEGV, Vast bao loi
   local nn; nn="$(ls -d /sys/devices/system/node/node* 2>/dev/null | wc -l)"
   if [[ "$nn" -gt 1 ]]; then
-    local n kb bad=0 dev numa
+    local n kb dev numa empty="" badgpu=""
     for n in /sys/devices/system/node/node*; do
       kb="$(awk '/MemTotal/{print $4}' "$n/meminfo")"
       echo -e "          $(basename "$n"): $((kb/1024/1024))GB RAM"
-      [[ "$kb" -lt 1048576 ]] && bad=1
+      [[ "$kb" -lt 1048576 ]] && empty="$empty ${n##*node}"
     done
     for dev in $(lspci -D -d 10de: | awk '/VGA|3D/{print $1}'); do
       numa="$(cat /sys/bus/pci/devices/$dev/numa_node 2>/dev/null)"
       echo -e "          card $dev -> CPU (node) $numa"
+      [[ " $empty " == *" $numa "* ]] && badgpu="$badgpu $dev"
     done
-    [[ "$bad" -eq 0 ]] && pass "Ca 2 CPU deu co RAM" \
-      || miss "Co CPU KHONG CO RAM (node 0GB)" "Tat may, chia thanh RAM cho CA 2 CPU (khe A1 + E1...). Thieu -> card cam ben CPU do bi loi NCCL/PCIe"
+    if [[ -n "$badgpu" ]]; then
+      miss "Card${badgpu} cam ben CPU KHONG CO RAM" "Tat may, chia RAM cho CA 2 CPU (khe A1 + E1...) hoac doi card sang khe CPU co RAM. Khong sua -> loi NCCL / 'GPU PCIE issue'"
+    elif [[ -n "$empty" ]]; then
+      note "CPU node${empty} chua co RAM (card hien tai van OK)" "Truoc khi cam them card vao khe CPU do, phai chia RAM cho ca 2 CPU"
+    else pass "Ca 2 CPU deu co RAM"; fi
   fi
 
   # RAM / o dia
@@ -308,6 +312,7 @@ ensure_vastai_cli() {
 }
 find_machine_id() {
   local id; id="$(cat "$ID_FILE" 2>/dev/null)"
+  [[ "$id" =~ ^[0-9]{4,8}$ ]] || { id=""; rm -f "$ID_FILE"; }
   if [[ -z "$id" ]]; then
     load_net_info
     id="$("$VASTAI" show machines --raw 2>/dev/null | python3 -c '
@@ -323,7 +328,14 @@ except Exception:
     print("")
 ' "$PUB_IP")"
     if [[ -z "$id" ]]; then
-      read -r -p "Khong tu tim duoc ID may. Nhap ID may (xem tren trang Machines): " id
+      warn "Khong tu tim duoc ID may. Danh sach may trong tai khoan:"
+      "$VASTAI" show machines 2>/dev/null | head -20
+      echo "ID may la SO ngan (vd 155963), cot ID o tren / 'ID:' tren the may tren web."
+      echo "KHONG dan API key vao day."
+      while true; do
+        read -r -p "Nhap ID may (chi so): " id; id="${id//[^0-9]/}"
+        [[ "$id" =~ ^[0-9]{4,8}$ ]] && break; err "ID phai la so 4-8 chu so"
+      done
     fi
     echo -n "$id" > "$ID_FILE"
   fi
