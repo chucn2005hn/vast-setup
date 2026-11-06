@@ -139,6 +139,9 @@ preflight() {
 have_key() { [[ -s "$REAL_HOME/.ssh/authorized_keys" ]] && grep -qE '^(ssh-|ecdsa-)' "$REAL_HOME/.ssh/authorized_keys"; }
 add_key_line() {
   local k="$1"
+  # chi lay phan khoa (bo 'echo "', '" >> ...', dau nhay... neu lo dan ca lenh)
+  k="$(printf '%s' "$k" | grep -oE '(ssh-(ed25519|rsa)|ecdsa-sha2-nistp[0-9]+) [A-Za-z0-9+/=]+( [A-Za-z0-9._@-]+)?' | head -1)"
+  [[ -n "$k" ]] || return 1
   echo "$k" | ssh-keygen -lf - >/dev/null 2>&1 || return 1
   mkdir -p "$REAL_HOME/.ssh"; touch "$REAL_HOME/.ssh/authorized_keys"
   grep -qxF "$k" "$REAL_HOME/.ssh/authorized_keys" || echo "$k" >> "$REAL_HOME/.ssh/authorized_keys"
@@ -288,6 +291,7 @@ ensure_vastai_cli() {
 }
 find_machine_id() {
   local id; id="$(cat "$ID_FILE" 2>/dev/null)"
+  [[ "$id" =~ ^[0-9]{4,8}$ ]] || { id=""; rm -f "$ID_FILE"; }
   if [[ -z "$id" ]]; then
     load_net_info
     id="$("$VASTAI" show machines --raw 2>/dev/null | python3 -c '
@@ -303,7 +307,14 @@ except Exception:
     print("")
 ' "$PUB_IP")"
     if [[ -z "$id" ]]; then
-      read -r -p "Khong tu tim duoc ID may. Nhap ID may (xem tren trang Machines): " id
+      warn "Khong tu tim duoc ID may. Danh sach may trong tai khoan:"
+      "$VASTAI" show machines 2>/dev/null | head -20
+      echo "ID may la SO ngan (vd 155963), cot ID o tren / 'ID:' tren the may tren web."
+      echo "KHONG dan API key vao day."
+      while true; do
+        read -r -p "Nhap ID may (chi so): " id; id="${id//[^0-9]/}"
+        [[ "$id" =~ ^[0-9]{4,8}$ ]] && break; err "ID phai la so 4-8 chu so"
+      done
     fi
     echo -n "$id" > "$ID_FILE"
   fi
@@ -354,7 +365,7 @@ stage1() {
   mkdir -p /etc/cloud/cloud.cfg.d
   echo 'network: {config: disabled}' > /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
   mkdir -p /root/netplan-backup && mv /etc/netplan/*.yaml /root/netplan-backup/ 2>/dev/null || true
-  printf 'network:\n  version: 2\n  ethernets:\n    lan:\n      match:\n        name: "en*"\n      dhcp4: true\n' \
+  printf 'network:\n  version: 2\n  ethernets:\n    lan:\n      match:\n        name: "en*"\n      dhcp4: true\n      dhcp-identifier: mac\n' \
     > /etc/netplan/01-vast.yaml
   chmod 600 /etc/netplan/01-vast.yaml
   netplan generate && ok "Cau hinh mang moi se ap dung sau khi khoi dong lai"

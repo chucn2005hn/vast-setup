@@ -163,6 +163,9 @@ preflight() {
 have_key() { [[ -s "$REAL_HOME/.ssh/authorized_keys" ]] && grep -qE '^(ssh-|ecdsa-)' "$REAL_HOME/.ssh/authorized_keys"; }
 add_key_line() {
   local k="$1"
+  # chi lay phan khoa (bo 'echo "', '" >> ...', dau nhay... neu lo dan ca lenh)
+  k="$(printf '%s' "$k" | grep -oE '(ssh-(ed25519|rsa)|ecdsa-sha2-nistp[0-9]+) [A-Za-z0-9+/=]+( [A-Za-z0-9._@-]+)?' | head -1)"
+  [[ -n "$k" ]] || return 1
   echo "$k" | ssh-keygen -lf - >/dev/null 2>&1 || return 1
   mkdir -p "$REAL_HOME/.ssh"; touch "$REAL_HOME/.ssh/authorized_keys"
   grep -qxF "$k" "$REAL_HOME/.ssh/authorized_keys" || echo "$k" >> "$REAL_HOME/.ssh/authorized_keys"
@@ -427,6 +430,27 @@ push_web() {
   ok "Xong - 1-2 phut sau bam F5 tren web"
 }
 
+
+# sau khi CHUYEN O CUNG sang may khac / doi main / doi card
+moved_machine() {
+  step "MAY VUA DOI PHAN CUNG (chuyen o / doi main / doi card)"
+  # mang: luon xin IP theo MAC (de modem khoa IP duoc)
+  if [[ -f /etc/netplan/01-vast.yaml ]] && ! grep -q 'dhcp-identifier: mac' /etc/netplan/01-vast.yaml; then
+    sed -i 's/      dhcp4: true/      dhcp4: true\n      dhcp-identifier: mac/' /etc/netplan/01-vast.yaml
+    netplan generate && ok "Mang: xin IP theo MAC (ap dung sau khi khoi dong lai)"
+  fi
+  preflight ""
+  load_net_info
+  box "MAIN MOI = MAC MOI -> PHAI KHOA IP LAI TREN MODEM" \
+      "MAC moi : $MAC" "IP hien tai : $LAN_IP" \
+      "1. Modem -> DHCP Binding: XOA dong MAC cu, them MAC moi + IP tren" \
+      "2. Port Forwarding dai $PR -> IP $LAN_IP" \
+      "3. Kiem tra: sudo timeout 180 python3 -m http.server $P_START  + portchecker.co"
+  enable_vm
+  push_web --speedtest
+  warn "Neu SO CARD / LOAI CARD thay doi: nhan ho tro Vast cap nhat (khi may KHONG co khach)."
+}
+
 # ------------------------------------------------------------------ BUOC 1
 stage1() {
   step "BUOC 1/3 - KIEM TRA + CHUAN BI HE THONG"
@@ -445,7 +469,7 @@ stage1() {
   mkdir -p /etc/cloud/cloud.cfg.d
   echo 'network: {config: disabled}' > /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
   mkdir -p /root/netplan-backup && mv /etc/netplan/*.yaml /root/netplan-backup/ 2>/dev/null || true
-  printf 'network:\n  version: 2\n  ethernets:\n    lan:\n      match:\n        name: "en*"\n      dhcp4: true\n' \
+  printf 'network:\n  version: 2\n  ethernets:\n    lan:\n      match:\n        name: "en*"\n      dhcp4: true\n      dhcp-identifier: mac\n' \
     > /etc/netplan/01-vast.yaml
   chmod 600 /etc/netplan/01-vast.yaml
   netplan generate && ok "Cau hinh mang moi se ap dung sau khi khoi dong lai"
@@ -585,10 +609,11 @@ case "${1:-}" in
   vm)     enable_vm ;;
   selftest) run_selftest ;;
   web)    push_web --speedtest ;;
+  doimay) moved_machine ;;
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in
       1) stage1 ;; 2) stage2 ;; 3) stage3 ;;
-      done) ok "May nay da cai xong. Lenh huu ich: port | vm | web | selftest | status"; load_net_info; print_port_box ;;
+      done) ok "May nay da cai xong. Lenh huu ich: port | vm | web | doimay | selftest | status"; load_net_info; print_port_box ;;
       *) stage1 ;;
     esac ;;
   *) echo "Cach dung: sudo bash $SELF  [check|status|port|vm|selftest|reset]"; exit 1 ;;
