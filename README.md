@@ -21,3 +21,9 @@ sudo apt update && sudo apt install -y openssh-server wget && wget -O vast_setup
 ```
 
 > ⚠️ Mỗi máy chỉ cắm **một loại card**. Không dán lệnh cài của Vast, API key hay mật khẩu lên GitHub.
+
+## Theo dõi máy tự động (báo qua Discord)
+Cài trên từng máy (xem chi tiết mục 5 trong [README_2060.md](README_2060.md)):
+```
+wget -O vast_monitor.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_monitor.sh && sudo bash vast_monitor.sh install
+```

@@ -134,3 +134,20 @@ Gom log PCIe gửi hỗ trợ: xem lệnh "pcie_log" trong [README_RTX.md](READM
 - Bấm "Test machine" trên web khi độ tin cậy < 90%
 - Gửi **API key, lệnh cài Vast, mật khẩu** cho bất kỳ ai / lên GitHub
 - Dán lại **kết quả** (output) vào terminal – chỉ dán **lệnh**
+
+---
+
+## 5. Tự động theo dõi máy, báo về Discord (nên cài cho MỌI máy)
+
+Cứ 5 phút kiểm tra: **đổi IP**, mất mạng, máy khởi động lại, dịch vụ Vast tắt, **thiếu card**, card quá nóng, **lỗi PCIe**, ổ đầy, **máy bị ẩn trên chợ**, **có khách mới / khách trả máy**. Mỗi sáng 8h gửi báo cáo tổng.
+
+1. Discord → kênh (vd `#vast`) → ⚙️ Edit Channel → Integrations → Webhooks → New Webhook → **Copy Webhook URL** (làm 1 lần, dùng chung mọi máy)
+2. Trên từng máy:
+```
+wget -O vast_monitor.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_monitor.sh && sudo bash vast_monitor.sh install
+```
+→ dán link webhook, đặt tên máy (vd `may-2060-156128`), Enter
+3. Lệnh: `sudo vast-monitor status` (xem) · `sudo vast-monitor test` (gửi thử) · `sudo vast-monitor uninstall` (gỡ)
+
+> Máy **tắt hẳn / mất điện** thì không tự báo được → nếu **sáng không thấy báo cáo 8h** của máy nào là máy đó có vấn đề.
+> **Không** đưa link webhook lên GitHub hay gửi cho người khác.
