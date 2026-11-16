@@ -27,3 +27,18 @@ Cài trên từng máy (xem chi tiết mục 5 trong [README_2060.md](README_206
 ```
 wget -O vast_monitor.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_monitor.sh && sudo bash vast_monitor.sh install
 ```
+
+## Quét mạng: máy nào đã cài / chưa cài / đổi IP (chạy trên Windows)
+Tải 1 lần (CMD):
+```
+powershell -Command "iwr https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_scan.ps1 -OutFile $env:USERPROFILE\vast_scan.ps1"
+```
+Mỗi lần muốn xem (CMD):
+```
+powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1
+```
+Hiện bảng: IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · **DOI IP (cu: …)**.
+Máy cài trước ngày 16/11 chưa có ID → chạy 1 lần trên máy đó:
+```
+printf 'ID=%s PORTS=%s\n' "$(sudo cat /root/vast_machine_id)" "$(sudo cat /var/lib/vastai_kaalia/host_port_range)" | sudo tee /etc/vast-info
+```

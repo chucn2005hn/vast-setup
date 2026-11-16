@@ -319,6 +319,7 @@ except Exception:
     echo -n "$id" > "$ID_FILE"
   fi
   MACHINE_ID="$id"
+  save_info
 }
 run_selftest() {
   ensure_vastai_cli || return 1
@@ -345,6 +346,13 @@ push_web() {
   python3 /var/lib/vastai_kaalia/send_mach_info.py ${1:-} 2>&1 | grep -E "speedtest|VM feature|Data sent|rror" | tail -5
   echo "VM tren may: $(python3 /var/lib/vastai_kaalia/enable_vms.py check 2>/dev/null)"
   ok "Xong - 1-2 phut sau bam F5 tren web"
+}
+
+
+# ghi thong tin may ra file ai cung doc duoc (cong cu vast_scan.ps1 tren Windows doc qua SSH)
+save_info() {
+  local id pr; id="$(cat "$ID_FILE" 2>/dev/null)"; pr="$(cat "$PORT_FILE" 2>/dev/null)"
+  printf 'ID=%s PORTS=%s\n' "${id:-?}" "${pr:-?}" > /etc/vast-info; chmod 644 /etc/vast-info
 }
 
 # ------------------------------------------------------------------ BUOC 1
@@ -485,7 +493,7 @@ stage4() {
     warn "Da khoi phuc vastai.service"
   fi
   systemctl daemon-reload; systemctl enable vastai >/dev/null 2>&1; systemctl restart vastai
-  echo -n done > "$STATE"
+  echo -n done > "$STATE"; save_info
 
   step "KET QUA"
   echo "vastai : $(systemctl is-active vastai)"
