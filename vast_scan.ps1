@@ -5,8 +5,10 @@
 #  - Tu tim dai mang (vd 192.168.1.x), ping ca dai, doc bang ARP
 #  - Vao tung may bang SSH key (khong hoi mat khau) lay: card, Vast, port, ID
 #  - Nho lai MAC -> IP: may nao DOI IP se bao "DOI IP (cu: ...)"
+#  - Dat ten cho may (de nho): them -DatTen
+#    powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1 -DatTen
 # ==================================================================
-param([string]$User = "lehien", [string]$Prefix = "")
+param([string]$User = "lehien", [string]$Prefix = "", [switch]$DatTen)
 
 $ErrorActionPreference = "SilentlyContinue"
 $onWin = ($PSVersionTable.PSVersion.Major -le 5) -or $IsWindows
@@ -65,13 +67,17 @@ function Test-Port22($ip) {
 
 # ---- 5. Doc danh sach cu (de biet may nao doi IP) ----------------
 $db = @{}
-if (Test-Path $dbFile) { Import-Csv $dbFile | ForEach-Object { $db[$_.MAC] = $_ } }
+if (Test-Path $dbFile) {
+  Import-Csv $dbFile | ForEach-Object {
+    $db[$_.MAC] = [pscustomobject]@{ Ten = $_.Ten; MAC = $_.MAC; IP = $_.IP; TrangThai = $_.TrangThai; Card = $_.Card; Port = $_.Port; ID = $_.ID; LastSeen = $_.LastSeen }
+  }
+}
 
 $rows = @()
 foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
   $mac = $macOf[$ip]
   if ($ip -eq $myIP) { continue }
-  $row = [ordered]@{ IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; Port = ""; ID = ""; GhiChu = "" }
+  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; Port = ""; ID = ""; GhiChu = "" }
   if ($ip -match '\.1$') { $row.TrangThai = "modem"; $rows += [pscustomobject]$row; continue }
 
   if (Test-Port22 $ip) {
@@ -83,6 +89,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
       $row.Card = $f[2].Trim()
       $row.Port = $f[4].Trim()
       if ($f[5] -match 'ID=(\d+)') { $row.ID = $Matches[1] }
+      if ($f[5] -match 'NAME=([^?\s]+)') { $row.Ten = $Matches[1] }
       if ($f[5] -match 'PORTS=(\S+)' -and -not $row.Port) { $row.Port = $Matches[1] }
       $row.TrangThai = if ($f[3].Trim() -eq "active") { "DA CAI VAST" } elseif ($row.Card) { "Ubuntu, CHUA cai Vast" } else { "Ubuntu (khong thay card)" }
     } else {
@@ -98,6 +105,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
     if ($old.IP -ne $ip) { $row.GhiChu = "DOI IP (cu: $($old.IP))" }
     if (-not $row.ID -and $old.ID) { $row.ID = $old.ID }
     if (-not $row.Port -and $old.Port) { $row.Port = $old.Port }
+    if (-not $row.Ten -and $old.Ten) { $row.Ten = $old.Ten }
   } elseif ($mac -ne "?" -and $row.TrangThai -notmatch "khong phai|modem") {
     if (-not $row.GhiChu) { $row.GhiChu = "may moi thay lan dau" }
   }
@@ -106,20 +114,32 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
 
 # ---- 6. In ket qua -----------------------------------------------
 Write-Host ""
-$rows | Format-Table -AutoSize IP, MAC, TrangThai, Card, Port, ID, GhiChu | Out-String -Width 250 | Write-Host
+$rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, Port, ID, GhiChu | Out-String -Width 250 | Write-Host
 
 $seen = @{}; foreach ($r in $rows) { $seen[$r.MAC] = $true }
 $missing = $db.Values | Where-Object { -not $seen.ContainsKey($_.MAC) -and $_.TrangThai -match "VAST|Ubuntu" }
 if ($missing) {
   Write-Host "KHONG THAY TREN MANG (tat may / mat mang / cam modem khac):" -ForegroundColor Yellow
-  $missing | Format-Table -AutoSize IP, MAC, TrangThai, Card, Port, ID, LastSeen | Out-String -Width 250 | Write-Host
+  $missing | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, Port, ID, LastSeen | Out-String -Width 250 | Write-Host
+}
+
+# ---- 6b. Dat ten (-DatTen) ---------------------------------------
+if ($DatTen) {
+  Write-Host "DAT TEN CHO MAY (Enter = giu ten cu / bo qua). Khong dau, khong cach, vd 2060-ke-trai" -ForegroundColor Cyan
+  foreach ($r in $rows) {
+    if ($r.TrangThai -match "khong phai|modem" -or $r.MAC -eq "?") { continue }
+    $cur = if ($r.Ten) { " [dang: $($r.Ten)]" } else { "" }
+    $n = Read-Host "  $($r.IP)  $($r.Card) $($r.TrangThai)$cur -> ten"
+    if ($n) { $r.Ten = ($n.Trim() -replace '\s+', '-') }
+  }
+  Write-Host "Da dat ten. (Muon ten hien ca khi SSH: tren may chay  sudo bash vast_setup_rtx.sh ten)" -ForegroundColor DarkGray
 }
 
 # ---- 7. Luu lai ---------------------------------------------------
 $now = Get-Date -Format "yyyy-MM-dd HH:mm"
 foreach ($r in $rows) {
   if ($r.MAC -eq "?" -or $r.TrangThai -match "khong phai|modem") { continue }
-  $db[$r.MAC] = [pscustomobject]@{ MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; LastSeen = $now }
+  $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; LastSeen = $now }
 }
 $db.Values | Export-Csv -NoTypeInformation -Encoding UTF8 $dbFile
 Write-Host "Da luu danh sach may: $dbFile" -ForegroundColor DarkGray

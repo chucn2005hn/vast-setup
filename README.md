@@ -37,8 +37,14 @@ Mỗi lần muốn xem (CMD):
 ```
 powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1
 ```
-Hiện bảng: IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · **DOI IP (cu: …)**.
-Máy cài trước ngày 16/11 chưa có ID → chạy 1 lần trên máy đó:
+Đặt / sửa tên máy ngay trên Windows (hỏi từng máy, Enter = giữ):
 ```
-printf 'ID=%s PORTS=%s\n' "$(sudo cat /root/vast_machine_id)" "$(sudo cat /var/lib/vastai_kaalia/host_port_range)" | sudo tee /etc/vast-info
+powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1 -DatTen
 ```
+Bảng: **Tên** · IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · **DOI IP (cu: …)**. Máy tắt/mất mạng hiện ở mục **KHONG THAY TREN MANG**.
+
+**Đặt tên lưu trên chính máy Ubuntu** (máy mới: script tự hỏi ở lần chạy 1; máy cũ: tải script mới rồi chạy 1 lần):
+```
+wget -O vast_setup_rtx.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup_rtx.sh && sudo bash vast_setup_rtx.sh ten
+```
+(lệnh này cũng ghi ID + dải port để công cụ quét hiện đủ)

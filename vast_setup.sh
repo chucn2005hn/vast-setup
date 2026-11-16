@@ -351,14 +351,24 @@ push_web() {
 
 # ghi thong tin may ra file ai cung doc duoc (cong cu vast_scan.ps1 tren Windows doc qua SSH)
 save_info() {
-  local id pr; id="$(cat "$ID_FILE" 2>/dev/null)"; pr="$(cat "$PORT_FILE" 2>/dev/null)"
-  printf 'ID=%s PORTS=%s\n' "${id:-?}" "${pr:-?}" > /etc/vast-info; chmod 644 /etc/vast-info
+  local id pr nm; id="$(cat "$ID_FILE" 2>/dev/null)"; pr="$(cat "$PORT_FILE" 2>/dev/null)"; nm="$(cat /root/vast_name 2>/dev/null)"
+  printf 'NAME=%s ID=%s PORTS=%s\n' "${nm:-?}" "${id:-?}" "${pr:-?}" > /etc/vast-info; chmod 644 /etc/vast-info
+}
+# dat ten de nho may (hien trong cong cu vast_scan.ps1 tren Windows)
+set_name() {
+  local cur nm; cur="$(cat /root/vast_name 2>/dev/null)"
+  echo "Dat TEN de nho may nay (vd 2060-ke-trai, 3060-tang2). Khong dau, khong cach."
+  read -r -p "Ten may${cur:+ (dang la: $cur, Enter = giu)}: " nm
+  nm="${nm:-$cur}"; nm="$(echo "$nm" | tr ' ' '-' | tr -cd 'A-Za-z0-9._-')"
+  [[ -n "$nm" ]] || { warn "Chua dat ten (sau dat: sudo bash $SELF ten)"; return 0; }
+  echo -n "$nm" > /root/vast_name; save_info; ok "Ten may: $nm"
 }
 
 # ------------------------------------------------------------------ BUOC 1
 stage1() {
   step "BUOC 1/4 - KIEM TRA + CHUAN BI HE THONG"
   if ! preflight; then ask "Van tiep tuc du con thieu?" || exit 1; fi
+  [[ -s /root/vast_name ]] || set_name
 
   step "1.1 Goi co ban, tat cap nhat tu dong"
   apt-get update
@@ -525,6 +535,7 @@ case "${1:-}" in
   status) echo "Dang o buoc: $(cat "$STATE" 2>/dev/null || echo 1)" ;;
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
   selftest) run_selftest ;;
+  ten)    set_name ;;
   web)    push_web --speedtest ;;
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in
