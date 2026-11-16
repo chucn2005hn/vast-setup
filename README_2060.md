@@ -22,6 +22,8 @@
 
 ## ⭐ SAO CHÉP THEO THỨ TỰ
 
+> 🆕 **Lệnh cài đã gộp sẵn:** lần chạy 1 tự **hỏi TÊN máy** (vd `2060-ke-trai`) · lần chạy 3 tự hỏi **link Discord** để cài cảnh báo (Enter = bỏ qua) · tự ghi tên + ID + dải port cho công cụ quét `vast_scan.ps1` trên Windows. Lệnh lẻ: `ten` (đổi tên) · `monitor` (cài cảnh báo sau) · `doimay` (sau khi chuyển ổ/đổi main).
+
 🪟 = CMD Windows (`C:\Users\...>`) · 🐧 = máy Ubuntu (`lehien@lehien:~$`)
 
 **Chỉ 1 lần trên Windows (đã có key thì bỏ qua):**

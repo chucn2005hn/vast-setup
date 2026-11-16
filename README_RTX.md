@@ -13,6 +13,8 @@
 
 ## ⭐ SAO CHÉP THEO THỨ TỰ (chỉ cần làm theo mục này)
 
+> 🆕 **Lệnh cài đã gộp sẵn:** lần chạy 1 tự **hỏi TÊN máy** (vd `2060-ke-trai`) · lần chạy 3 tự hỏi **link Discord** để cài cảnh báo (Enter = bỏ qua) · tự ghi tên + ID + dải port cho công cụ quét `vast_scan.ps1` trên Windows. Lệnh lẻ: `ten` (đổi tên) · `monitor` (cài cảnh báo sau) · `doimay` (sau khi chuyển ổ/đổi main).
+
 Thay `IP_MAY` bằng IP máy mới (gõ `ip -4 -br addr` trên máy, dạng `192.168.1.x`). Thay `lehien` nếu tên user khác.
 🪟 = **CMD máy Windows** (dòng `C:\Users\...>`) · 🐧 = **máy Ubuntu** (dòng `...@...:~$`)
 

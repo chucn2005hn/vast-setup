@@ -364,6 +364,21 @@ set_name() {
   echo -n "$nm" > /root/vast_name; save_info; ok "Ten may: $nm"
 }
 
+
+# cai cong cu canh bao qua Discord (vast_monitor.sh) - Enter de bo qua
+setup_monitor() {
+  step "CANH BAO QUA DISCORD (doi IP, mat mang, loi card, co khach...)"
+  if [[ -f /etc/vast-monitor.conf ]]; then ok "Da cai canh bao (sudo vast-monitor status)"; return 0; fi
+  echo "Lay link: Discord -> kenh -> Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL"
+  local url; read -r -p "Dan link webhook (Enter = bo qua, cai sau: sudo bash $SELF monitor): " url; url="$(echo "$url" | xargs)"
+  [[ -n "$url" ]] || { warn "Bo qua canh bao Discord"; return 0; }
+  local src=/root/vast_monitor.sh
+  wget -q -O "$src" "https://raw.githubusercontent.com/$GH_USER/vast-setup/main/vast_monitor.sh" \
+    || { err "Khong tai duoc vast_monitor.sh tu GitHub"; return 1; }
+  VM_URL="$url" VM_NAME="$(cat /root/vast_name 2>/dev/null)" VM_EXP="$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')" \
+    VM_SRC="$src" bash "$src" install
+}
+
 # ------------------------------------------------------------------ BUOC 1
 stage1() {
   step "BUOC 1/4 - KIEM TRA + CHUAN BI HE THONG"
@@ -504,6 +519,7 @@ stage4() {
   fi
   systemctl daemon-reload; systemctl enable vastai >/dev/null 2>&1; systemctl restart vastai
   echo -n done > "$STATE"; save_info
+  setup_monitor
 
   step "KET QUA"
   echo "vastai : $(systemctl is-active vastai)"
@@ -536,6 +552,7 @@ case "${1:-}" in
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
   selftest) run_selftest ;;
   ten)    set_name ;;
+  monitor) rm -f /etc/vast-monitor.conf.skip; setup_monitor ;;
   web)    push_web --speedtest ;;
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in

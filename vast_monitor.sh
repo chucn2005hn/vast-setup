@@ -165,15 +165,15 @@ do_install() {
   echo "Can 1 link Discord webhook (lam 1 lan, dung chung cho moi may):"
   echo "  Discord -> server cua ban -> kenh (vd #vast) -> banh rang 'Edit Channel'"
   echo "  -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL"
-  local url name exp
-  while true; do
-    read -r -p "Dan link webhook (https://discord.com/api/webhooks/...): " url; url="$(echo "$url" | xargs)"
-    [[ "$url" =~ ^https://(discord|discordapp)\.com/api/webhooks/ ]] && break
-    echo -e "${RED}Link khong dung dang${NC}"
-  done
-  read -r -p "Ten may de nhan biet (vd may-3060, Enter = $(hostname)): " name; name="${name:-$(hostname)}"
+  local url="${VM_URL:-}" name="${VM_NAME:-}" exp="${VM_EXP:-}"
+  local defname; defname="$(cat /root/vast_name 2>/dev/null)"; defname="${defname:-$(hostname)}"
   local n; n="$(nvidia-smi -L 2>/dev/null | grep -c '^GPU')"
-  read -r -p "So card may nay phai co (Enter = $n): " exp; exp="${exp:-$n}"
+  until [[ "$url" =~ ^https://(discord|discordapp)\.com/api/webhooks/ ]]; do
+    [[ -n "$url" ]] && echo -e "${RED}Link khong dung dang${NC}"
+    read -r -p "Dan link webhook (https://discord.com/api/webhooks/...): " url; url="$(echo "$url" | xargs)"
+  done
+  [[ -n "$name" ]] || { read -r -p "Ten may (Enter = $defname): " name; name="${name:-$defname}"; }
+  [[ -n "$exp" ]] || { read -r -p "So card may nay phai co (Enter = $n): " exp; exp="${exp:-$n}"; }
   umask 077
   cat > "$CONF" <<EOF
 DISCORD_URL="$url"
@@ -184,7 +184,7 @@ DISK_MAX=90
 HB_HOUR=8
 EOF
   chmod 600 "$CONF"
-  install -m 755 "$0" "$BIN"
+  install -m 755 "${VM_SRC:-$0}" "$BIN"
   cat > /etc/systemd/system/vast-monitor.service <<EOF
 [Unit]
 Description=Vast monitor
