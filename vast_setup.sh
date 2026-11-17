@@ -274,16 +274,17 @@ ensure_vastai_cli() {
     python3 -m pip install -q vastai || { err "Cai cong cu vastai loi"; return 1; }
   fi
   [[ -x "$VASTAI" ]] || VASTAI="$(command -v vastai)"
-  if ! "$VASTAI" show user >/dev/null 2>&1; then
+  # kiem tra that bang 'show machines' (show user co the qua du key khong du quyen)
+  if ! "$VASTAI" show machines --raw 2>/dev/null | grep -q '"id"'; then
     box "DEN LUOT BAN: NHAP API KEY CUA VAST" \
         "1. Mo https://cloud.vast.ai/manage-keys/" \
         "2. Muc 'API Keys' -> + New -> dat ten (vd may-1080-<so>) -> copy key" \
         "3. Dan key vao day, Enter   (KHONG gui key cho ai)"
     local k
     while true; do
-      read -r -p "Dan API key: " k; k="$(echo "$k" | xargs)"
+      read -r -s -p "Dan API key (khong hien chu): " k; echo; k="$(echo "$k" | xargs)"
       [[ -n "$k" ]] || continue
-      "$VASTAI" set api-key "$k" >/dev/null && "$VASTAI" show user >/dev/null 2>&1 && break
+      "$VASTAI" set api-key "$k" >/dev/null && "$VASTAI" show machines --raw 2>/dev/null | grep -q '"id"' && break
       err "Key sai (luu y: day la API key, KHONG phai key trong lenh cai Vast). Thu lai."
     done
   fi

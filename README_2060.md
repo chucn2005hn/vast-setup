@@ -115,6 +115,9 @@ Gom log PCIe gửi hỗ trợ: xem lệnh "pcie_log" trong [README_RTX.md](READM
 
 | Lỗi | Nguyên nhân | Sửa |
 |---|---|---|
+| Cài máy mới: bước **bật VM đứng mãi** (>15 phút) / web báo **`bad bandwidthtest2 ... r_H2D`** | Thử VM chạy đúng lúc Vast đang tải/đo ngầm → máy ảo thử treo, giữ luôn card. Bản mới tự chờ + tự dọn. Tay: `sudo reboot` → `sudo bash vast_setup_rtx.sh vm` (lần 2 thành công) → `sudo python3 /var/lib/vastai_kaalia/send_mach_info.py` |
+| Self-test / `show machines` báo **HTTP 403** | API key trên máy đó sai/không đủ quyền (mỗi máy lưu key riêng): `read -rsp "Dan API key: " K; echo; sudo vastai set api-key "$K"` (dán xong **không hiện chữ là bình thường**) |
+| Web báo **"GPU PCIE issue"**, card chạy **x8 / x2** | Kiểm tra: `nvidia-smi --query-gpu=pcie.link.width.current,pcie.link.width.max --format=csv` phải `16, 16`. Không phải 16 → chuyển card sang khe x16 thật (giống máy đang chạy x16), không riser. Công cụ `vast_scan.ps1` cột **PCIe** báo `x8(LOI)` |
 | Web: **"GPU PCIE issue"**, máy bị ẩn | Card cắm bên **CPU không có RAM**, hoặc khe tiếp xúc kém | Kiểm tra node RAM (mục 2). Khi **hết khách**: chia RAM cho cả 2 CPU / lau chân card, cắm lại. Sửa xong Vast **tự** gỡ cờ (vài giờ) |
 | Self-test: **NCCL ... SIGSEGV** | Như trên (node RAM = 0GB) | Như trên |
 | Self-test: **0 offers / No on-demand offer** | Máy chưa list hoặc đang bị ẩn | List máy; đợi gỡ cờ |

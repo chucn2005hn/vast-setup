@@ -56,7 +56,8 @@ v=$(systemctl is-active vastai 2>/dev/null)
 p=$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)
 i=$(cat /etc/vast-info 2>/dev/null | tr '\n' ' ')
 m=$(cat /sys/class/net/$(ip route show default | awk '{print $5; exit}')/address 2>/dev/null)
-echo "VASTINFO|$(hostname)|$g|$v|$p|$i|$m|$(uptime -p)"
+w=$(nvidia-smi --query-gpu=pcie.link.width.current,pcie.link.width.max --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{printf "x%s%s ",$1,($1<$2?"(LOI)":"")}')
+echo "VASTINFO|$(hostname)|$g|$v|$p|$i|$m|$(uptime -p)|$w"
 '@ -replace "`r", ""
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remote))
 
@@ -77,7 +78,7 @@ $rows = @()
 foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
   $mac = $macOf[$ip]
   if ($ip -eq $myIP) { continue }
-  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; Port = ""; ID = ""; GhiChu = "" }
+  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; PCIe = ""; Port = ""; ID = ""; GhiChu = "" }
   if ($ip -match '\.1$') { $row.TrangThai = "modem"; $rows += [pscustomobject]$row; continue }
 
   if (Test-Port22 $ip) {
@@ -87,6 +88,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
       $f = $info.Split('|')
       if ($f[6]) { $mac = $f[6].Trim().ToLower(); $row.MAC = $mac }
       $row.Card = $f[2].Trim()
+      if ($f.Count -gt 8) { $row.PCIe = $f[8].Trim(); if ($row.PCIe -match "LOI") { $row.GhiChu = "CARD CHAY THIEU LANE (Vast bao GPU PCIE issue)" } }
       $row.Port = $f[4].Trim()
       if ($f[5] -match 'ID=(\d+)') { $row.ID = $Matches[1] }
       if ($f[5] -match 'NAME=([^?\s]+)') { $row.Ten = $Matches[1] }
@@ -114,7 +116,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
 
 # ---- 6. In ket qua -----------------------------------------------
 Write-Host ""
-$rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, Port, ID, GhiChu | Out-String -Width 250 | Write-Host
+$rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, PCIe, Port, ID, GhiChu | Out-String -Width 250 | Write-Host
 
 $seen = @{}; foreach ($r in $rows) { $seen[$r.MAC] = $true }
 $missing = $db.Values | Where-Object { -not $seen.ContainsKey($_.MAC) -and $_.TrangThai -match "VAST|Ubuntu" }

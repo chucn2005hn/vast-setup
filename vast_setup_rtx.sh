@@ -298,16 +298,17 @@ ensure_vastai_cli() {
     python3 -m pip install -q vastai || { err "Cai cong cu vastai loi"; return 1; }
   fi
   [[ -x "$VASTAI" ]] || VASTAI="$(command -v vastai)"
-  if ! "$VASTAI" show user >/dev/null 2>&1; then
+  # kiem tra that bang 'show machines' (show user co the qua du key khong du quyen)
+  if ! "$VASTAI" show machines --raw 2>/dev/null | grep -q '"id"'; then
     box "DEN LUOT BAN: NHAP API KEY CUA VAST" \
         "1. Mo https://cloud.vast.ai/manage-keys/" \
         "2. Muc 'API Keys' -> + New -> dat ten (vd may-3060-<so>) -> copy key" \
         "3. Dan key vao day, Enter   (KHONG gui key cho ai)"
     local k
     while true; do
-      read -r -p "Dan API key: " k; k="$(echo "$k" | xargs)"
+      read -r -s -p "Dan API key (khong hien chu): " k; echo; k="$(echo "$k" | xargs)"
       [[ -n "$k" ]] || continue
-      "$VASTAI" set api-key "$k" >/dev/null && "$VASTAI" show user >/dev/null 2>&1 && break
+      "$VASTAI" set api-key "$k" >/dev/null && "$VASTAI" show machines --raw 2>/dev/null | grep -q '"id"' && break
       err "Key sai (luu y: day la API key, KHONG phai key trong lenh cai Vast). Thu lai."
     done
   fi
@@ -397,8 +398,22 @@ enable_vm() {
       ovmf libvirt-daemon-system cpu-checker psmisc >/dev/null 2>&1 \
       && ok "Da cai qemu $QV" || warn "Cai qemu loi - Vast se tu thu lai"
   fi
-  python3 /var/lib/vastai_kaalia/enable_vms.py on -f 2>&1 \
+  # cho Vast cai/tai ngam xong (may moi: tai pytorch, do bang thong) - chay cung luc de VM treo
+  local w=0
+  while pgrep -f "docker pull|apt-get|dpkg --configure|send_mach_info" >/dev/null && (( w < 60 )); do
+    (( w == 0 )) && echo "Doi Vast tai/cai ngam xong truoc khi thu VM (toi da 10 phut)..."
+    sleep 10; w=$((w+1))
+  done
+  # thu VM toi da 15 phut; treo -> don dep, tra card ve Docker
+  timeout -k 30 900 python3 /var/lib/vastai_kaalia/enable_vms.py on -f 2>&1 \
     | grep -v -e Pulling -e Waiting -e Verifying -e complete -e 'Already exists' | tail -n 15
+  if pgrep -f "virsh qemu-agent-command" >/dev/null || virsh list --name 2>/dev/null | grep -q vm_test; then
+    warn "Thu VM bi TREO -> don dep, tra card ve cho Docker"
+    pkill -f "virsh qemu-agent-command"; virsh destroy vm_test >/dev/null 2>&1; virsh undefine vm_test --nvram >/dev/null 2>&1
+    box "VM CHUA BAT DUOC (may van cho thue Docker binh thuong)" \
+        "Khoi dong lai may:  sudo reboot" \
+        "Len lai chay:       sudo bash $SELF vm   (lan 2 thuong thanh cong)"
+  fi
   # script cua Vast co the doi ten dich vu roi bo do -> khoi phuc
   if [[ -f /etc/systemd/system/vastai.service.mask ]]; then
     mv /etc/systemd/system/vastai.service.mask /etc/systemd/system/vastai.service
