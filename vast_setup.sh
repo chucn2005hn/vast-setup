@@ -255,7 +255,7 @@ port_step() {
   load_net_info
   print_port_box
   local tp; tp="$(free_test_port "$P_START" "$P_END")"
-  python3 -m http.server "$tp" --bind 0.0.0.0 >/dev/null 2>&1 &
+  python3 -m http.server "$tp" --bind 0.0.0.0 --directory "$(mktemp -d)" >/dev/null 2>&1 &   # thu muc rong: khong lo file cua may
   local hp=$!
   echo -e "Da mo tam port ${GRN}$tp${NC} de kiem tra (portchecker.co: IP $PUB_IP, port $tp)."
   echo "Cai modem theo khung tren, roi vao portchecker.co kiem tra:"
@@ -271,6 +271,17 @@ free_test_port() {
   while (( p > $1 )) && ss -ltn 2>/dev/null | grep -q ":$p "; do p=$((p-1)); done
   echo "$p"
 }
+# modem co cho may trong nha goi vong qua IP mang khong (NAT loopback)? 0=co 1=khong 2=khong thu duoc
+nat_loopback() {
+  local pr p
+  pr="$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)"; [[ "$pr" =~ ^[0-9]+-[0-9]+$ ]] || return 2
+  [[ "${PUB_IP:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 2
+  p="$(ss -ltn 2>/dev/null | awk 'NR>1{print $4}' | grep -E '^(0\.0\.0\.0|\*|\[::\]):[0-9]+$' | grep -oE '[0-9]+$' \
+       | awk -v a="${pr%-*}" -v b="${pr#*-}" '$1>=a && $1<=b' | head -n1)"
+  [[ -n "$p" ]] || return 2
+  timeout 8 bash -c "echo > /dev/tcp/$PUB_IP/$p" 2>/dev/null && return 0
+  return 1
+}
 # kiem tra modem da mo dung port cho may nay chua (khong doi cai dat gi)
 check_port() {
   step "KIEM TRA PORT TREN MODEM"
@@ -278,7 +289,7 @@ check_port() {
   local pr tp hp
   pr="$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)"; [[ "$pr" =~ ^[0-9]+-[0-9]+$ ]] || pr="$PR"
   tp="$(free_test_port "${pr%-*}" "${pr#*-}")"
-  python3 -m http.server "$tp" --bind 0.0.0.0 >/dev/null 2>&1 &
+  python3 -m http.server "$tp" --bind 0.0.0.0 --directory "$(mktemp -d)" >/dev/null 2>&1 &   # thu muc rong: khong lo file cua may
   hp=$!; sleep 1
   echo "May nay: IP LAN $LAN_IP · MAC $MAC · dai port $pr"
   echo -e "Vao ${GRN}https://portchecker.co${NC}  nhap IP: ${GRN}$PUB_IP${NC}  port: ${GRN}$tp${NC}"
@@ -368,14 +379,39 @@ run_selftest() {
   ensure_vastai_cli || return 1
   find_machine_id
   step "SELF-TEST MAY $MACHINE_ID"
+  [[ -n "${PUB_IP:-}" ]] || load_net_info
+  # modem khong ho tro NAT loopback -> tam gan IP mang vao may trong luc test (da kiem chung: may 157941)
+  local lo_added=0 nl
+  nat_loopback; nl=$?
+  if (( nl == 1 )) && ip addr add "$PUB_IP/32" dev lo 2>/dev/null; then
+    lo_added=1
+    trap 'ip addr del "'"$PUB_IP"'/32" dev lo 2>/dev/null' EXIT INT TERM
+    warn "Modem khong ho tro NAT loopback -> tam gan IP mang $PUB_IP vao may trong luc test (xong tu go)"
+  fi
+  echo "Self-test mat vai phut, dung bam Ctrl+C..."
   local out; out="$("$VASTAI" self-test machine "$MACHINE_ID" 2>&1)"; echo "$out" | tail -n 25
-  if echo "$out" | grep -qi 'reliability'; then
+  if (( lo_added )); then ip addr del "$PUB_IP/32" dev lo 2>/dev/null; trap - EXIT INT TERM; fi
+  if echo "$out" | grep -qi 'test failed'; then
+    if echo "$out" | grep -qiE 'never reachable|port'; then
+      if (( lo_added == 0 && nl == 2 )); then
+        box "SELF-TEST BAO LOI PORT" \
+            "Kiem tra tu ngoai: sudo bash $SELF kiemtraport (portchecker.co phai Open)" \
+            "Neu Open: co the do modem khong ho tro NAT loopback -> chay self-test" \
+            "tu 1 may o MANG KHAC:  sudo vastai self-test machine $MACHINE_ID"
+      else
+        box "SELF-TEST LOI PORT" "Modem chua mo dung dai port ve may nay. Kiem tra:" "    sudo bash $SELF kiemtraport"
+      fi
+    else
+      warn "SELF-TEST LOI - xem ket qua o tren, chup gui ho tro."
+    fi
+  elif echo "$out" | grep -qi 'reliability'; then
     box "CHUA DU DO TIN CAY (can > 90%) - BINH THUONG VOI MAY MOI" \
         "Cu de may chay 24/7, 1-2 ngay sau chay lai:" \
         "    sudo bash $SELF selftest" \
         "Xem do tin cay: so % canh hinh ngon tay cai tren the may (web)."
-  elif echo "$out" | grep -qi -e 'passed' -e 'success'; then
-    ok "SELF-TEST DAT - may se duoc Verified sau it phut/gio"
+  elif echo "$out" | grep -qiE 'test passed|completed successfully'; then
+    ok "SELF-TEST DAT"
+    (( lo_added )) && echo "  (Da tam gan IP mang vao may vi modem khong ho tro NAT loopback - noi ro khi gui ho tro)"
   else
     warn "Xem ket qua o tren. Neu loi khac 'reliability', chup gui ho tro."
   fi

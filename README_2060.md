@@ -122,6 +122,7 @@ Gom log PCIe gửi hỗ trợ: xem lệnh "pcie_log" trong [README_RTX.md](READM
 | Self-test: **NCCL ... SIGSEGV** | Như trên (node RAM = 0GB) | Như trên |
 | Self-test: **0 offers / No on-demand offer** | Máy chưa list hoặc đang bị ẩn | List máy; đợi gỡ cờ |
 | Self-test: **HTTP 403** | API key sai / đã xoá | `sudo vastai set api-key KEY_MOI` |
+| Self-test: **`Port never reachable`** nhưng portchecker **Open** | Modem không hỗ trợ NAT loopback → self-test chạy từ chính máy đó bị **báo nhầm** | `sudo bash vast_setup_rtx.sh selftest` (bản mới tự tạm gắn IP mạng vào máy trong lúc test → chạy được ngay trên máy) hoặc chạy self-test từ **máy ở mạng khác** |
 | Thêm/đổi card → **mất SSH** | Máy đổi IP | `arp -a` (Windows) tìm MAC máy → **khoá IP theo MAC** trên modem → sửa Port Forwarding |
 | Màn hình **đứng ở logo** BIOS | Bình thường (script tắt màn hình cho VM) | SSH vào bằng IP |
 | **VM: Disabled** dù máy báo `on` | Web chưa cập nhật | `sudo systemctl restart vastai && sudo python3 /var/lib/vastai_kaalia/send_mach_info.py` |
