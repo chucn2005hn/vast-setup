@@ -44,7 +44,8 @@ Lần đầu hỏi **API key** (https://cloud.vast.ai/manage-keys/ → New). Key
 Kết quả có 3 phần:
 | Phần | Xem gì |
 |---|---|
-| **MAY TRONG MANG LAN** | Tên · IP · MAC · đã cài Vast chưa · card · **PCIe** (`x8(LOI)` = cắm sai khe) · dải port · **ID** · IP mạng · ghi chú **DOI IP (cu: …)** / **VAST BAO LOI: …** |
+| **MAY TRONG MANG LAN** | Tên · IP · MAC · đã cài Vast chưa · card · **PCIe** (`x8(LOI)` = cắm sai khe) · dải port · **ID** · IP mạng · ghi chú **DOI IP (cu: …)** / **DOI MAIN + DOI IP** (ổ chuyển sang main khác → MAC mới) / **VAST BAO LOI: …** |
+| Cột **Card** đặc biệt | `DANG CHAY MAY AO (VM)` = có thể đang có khách thuê VM → **không** khởi động lại · `KET CHE DO VM` / `DRIVER LOI` → hết khách thì `sudo reboot` · `KHONG THAY CARD` → cắm lại card + dây nguồn |
 | **TAT CA MAY TREN VAST.AI** | Mọi máy trong tài khoản (cả máy ở chỗ khác): TenWeb (dòng *Name* trên web) · IP LAN · IP mạng · có list không · độ tin cậy · **lỗi web đang báo** |
 | **CO x MAY CAN XU LY** | Danh sách máy lỗi (chữ đỏ) + cách sửa |
 

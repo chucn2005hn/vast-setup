@@ -57,12 +57,21 @@ foreach ($ip in $alive.Keys) { if (-not $macOf.ContainsKey($ip)) { $macOf[$ip] =
 
 # ---- 4. Lenh chay tren may Ubuntu (khong can sudo) ---------------
 $remote = @'
-g=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | sed 's/NVIDIA GeForce //;s/NVIDIA //' | sort | uniq -c | awk '{c=$1;$1="";printf "%sx%s ",c,$0}')
+if nvidia-smi -L >/dev/null 2>&1; then
+  g=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | sed 's/NVIDIA GeForce //;s/NVIDIA //' | sort | uniq -c | awk '{c=$1;$1="";printf "%sx%s ",c,$0}')
+  w=$(nvidia-smi --query-gpu=pcie.link.width.current,pcie.link.width.max --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{printf "x%s%s ",$1,($1<$2?"(LOI)":"")}')
+else
+  n=$(lspci 2>/dev/null | grep -ciE '(vga|3d).*nvidia')
+  w=""
+  if pgrep -f qemu-system >/dev/null 2>&1; then g="${n} card: DANG CHAY MAY AO (VM)"
+  elif ls /sys/bus/pci/drivers/vfio-pci 2>/dev/null | grep -q ':'; then g="${n} card: KET CHE DO VM"
+  elif [ "${n:-0}" -gt 0 ]; then g="${n} card: DRIVER LOI"
+  else g="KHONG THAY CARD"; fi
+fi
 v=$(systemctl is-active vastai 2>/dev/null)
 p=$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)
 i=$(cat /etc/vast-info 2>/dev/null | tr '\n' ' ')
 m=$(cat /sys/class/net/$(ip route show default | awk '{print $5; exit}')/address 2>/dev/null)
-w=$(nvidia-smi --query-gpu=pcie.link.width.current,pcie.link.width.max --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{printf "x%s%s ",$1,($1<$2?"(LOI)":"")}')
 u=$(curl -4 -s -m 5 api.ipify.org 2>/dev/null || wget -qO- -T 5 api.ipify.org 2>/dev/null)
 echo "VASTINFO|$(hostname)|$g|$v|$p|$i|$m|$(uptime -p)|$w|$u"
 '@ -replace "`r", ""
@@ -77,7 +86,7 @@ function Test-Port22($ip) {
 $db = @{}
 if (Test-Path $dbFile) {
   Import-Csv $dbFile | ForEach-Object {
-    $db[$_.MAC] = [pscustomobject]@{ Ten = $_.Ten; MAC = $_.MAC; IP = $_.IP; TrangThai = $_.TrangThai; Card = $_.Card; Port = $_.Port; ID = $_.ID; Host = $_.Host; LastSeen = $_.LastSeen }
+    $db[$_.MAC] = [pscustomobject]@{ Ten = $_.Ten; MAC = $_.MAC; IP = $_.IP; TrangThai = $_.TrangThai; Card = $_.Card; Port = $_.Port; ID = $_.ID; Host = $_.Host; IPMang = $_.IPMang; LastSeen = $_.LastSeen }
   }
 }
 
@@ -96,7 +105,11 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
       if ($f[6]) { $mac = $f[6].Trim().ToLower(); $row.MAC = $mac }
       $row.Host = $f[1].Trim()
       $row.Card = $f[2].Trim()
-      if ($f.Count -gt 8) { $row.PCIe = $f[8].Trim(); if ($row.PCIe -match "LOI") { $row.GhiChu = "CARD CHAY THIEU LANE (Vast bao GPU PCIE issue)" } }
+      if ($f.Count -gt 8) { $row.PCIe = $f[8].Trim(); if ($row.PCIe -match "LOI") { $row.GhiChu = "CARD CHAY THIEU LANE -> het khach: chuyen card sang khe x16" } }
+      if ($row.Card -match "MAY AO") { $row.GhiChu = "card dang o may ao: co khach thue VM? xem web (#Running) - KHONG khoi dong lai" }
+      elseif ($row.Card -match "KET CHE DO VM") { $row.GhiChu = "card ket o che do VM, khong co may ao -> het khach: sudo reboot" }
+      elseif ($row.Card -match "DRIVER LOI") { $row.GhiChu = "driver khong nhan card -> het khach: sudo reboot; van loi: cam lai card" }
+      elseif ($row.Card -match "KHONG THAY CARD") { $row.GhiChu = "may khong thay card -> tat may, cam lai card + day nguon 8-pin" }
       $row.Port = $f[4].Trim()
       if ($f.Count -gt 9) { $row.IPMang = $f[9].Trim() }
       if ($f[5] -match 'ID=(\d+)') { $row.ID = $Matches[1] }
@@ -123,6 +136,19 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
     if (-not $row.GhiChu) { $row.GhiChu = "may moi thay lan dau" }
   }
   $rows += [pscustomobject]$row
+}
+
+# ---- 5a. May cu bien mat + may moi CUNG DAI PORT = cung 1 o cung, doi main/doi MAC
+$seenNow = @{}; foreach ($r in $rows) { $seenNow[$r.MAC] = $true }
+$replaced = @{}
+foreach ($old in @($db.Values)) {
+  if ($seenNow.ContainsKey($old.MAC) -or -not $old.Port -or $old.Port -eq "?" -or -not "$($old.IP)".StartsWith("$Prefix.")) { continue }
+  $r = $rows | Where-Object { $_.Port -eq $old.Port -and $_.MAC -ne $old.MAC -and (-not $old.IPMang -or -not $_.IPMang -or $old.IPMang -eq $_.IPMang) } | Select-Object -First 1
+  if (-not $r) { continue }
+  $r.GhiChu = ("DOI MAIN + DOI IP (cu: $($old.IP)) -> modem: DHCP Binding + Port Forwarding $($r.Port) ve IP nay -> sudo bash vast_setup_rtx.sh doimay; " + ($r.GhiChu -replace 'may moi thay lan dau', '')).Trim("; ")
+  if (-not $r.ID -and $old.ID) { $r.ID = $old.ID }
+  if (-not $r.Ten -and $old.Ten) { $r.Ten = $old.Ten }
+  $replaced[$old.MAC] = $true
 }
 
 # ---- 5b. Hoi Vast.ai: may nao dang bao loi tren web --------------
@@ -219,7 +245,7 @@ if ($vast) {
 }
 
 $seen = @{}; foreach ($r in $rows) { $seen[$r.MAC] = $true }
-$missing = $db.Values | Where-Object { -not $seen.ContainsKey($_.MAC) -and $_.TrangThai -match "VAST|Ubuntu" }
+$missing = $db.Values | Where-Object { -not $seen.ContainsKey($_.MAC) -and -not $replaced.ContainsKey($_.MAC) -and $_.TrangThai -match "VAST|Ubuntu" }
 if ($missing) {
   Write-Host "KHONG THAY TREN MANG (tat may / mat mang / cam modem khac):" -ForegroundColor Yellow
   $missing | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, Port, ID, LastSeen | Out-String -Width 250 | Write-Host
@@ -239,9 +265,10 @@ if ($DatTen) {
 
 # ---- 7. Luu lai ---------------------------------------------------
 $now = Get-Date -Format "yyyy-MM-dd HH:mm"
+foreach ($k in @($replaced.Keys)) { $db.Remove($k) }
 foreach ($r in $rows) {
   if ($r.MAC -eq "?" -or $r.TrangThai -match "khong phai|modem") { continue }
-  $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; Host = $r.Host; LastSeen = $now }
+  $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; Host = $r.Host; IPMang = $r.IPMang; LastSeen = $now }
 }
 $db.Values | Export-Csv -NoTypeInformation -Encoding UTF8 $dbFile
 Write-Host "Da luu danh sach may: $dbFile" -ForegroundColor DarkGray
