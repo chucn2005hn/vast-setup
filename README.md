@@ -70,9 +70,10 @@ Gần như luôn do **máy nhảy IP LAN** → modem vẫn mở port cho IP cũ.
 2. Modem: **DHCP Binding** sửa MAC đó → IP mới (hoặc ép về IP cũ) · **Port Forwarding** dải port của máy → đúng IP đó, TCP+UDP
 3. Kiểm tra port – SSH vào máy, mở tạm 1 port (3 phút):
    ```
-   P=$(cut -d- -f2 /var/lib/vastai_kaalia/host_port_range); echo "Vao portchecker.co kiem tra port $P"; sudo timeout 180 python3 -m http.server $P
+   R=$(cat /var/lib/vastai_kaalia/host_port_range); P=${R#*-}; while ss -ltn | grep -q ":$P "; do P=$((P-1)); done; echo "Vao portchecker.co kiem tra port $P"; sudo timeout 180 python3 -m http.server $P
    ```
    → https://portchecker.co nhập **IP mạng** + port vừa hiện → phải **Open** → Ctrl+C
+   (bản script mới gọn hơn: `sudo bash vast_setup_rtx.sh kiemtraport`)
 4. `sudo bash vast_setup_rtx.sh web` → vài phút sau lỗi tự hết
 
 ### Sửa "GPU error, unable to start instance"

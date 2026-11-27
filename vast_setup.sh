@@ -254,13 +254,37 @@ port_step() {
   done
   load_net_info
   print_port_box
-  python3 -m http.server "$P_START" --bind 0.0.0.0 >/dev/null 2>&1 &
+  local tp; tp="$(free_test_port "$P_START" "$P_END")"
+  python3 -m http.server "$tp" --bind 0.0.0.0 >/dev/null 2>&1 &
   local hp=$!
-  echo -e "Da mo tam port ${GRN}$P_START${NC} de kiem tra."
+  echo -e "Da mo tam port ${GRN}$tp${NC} de kiem tra (portchecker.co: IP $PUB_IP, port $tp)."
   echo "Cai modem theo khung tren, roi vao portchecker.co kiem tra:"
   echo "  Open   -> bam Enter de tiep tuc"
   echo "  Closed -> xem lai muc [0] va [1]; neu chua sua duoc van bam Enter, sua modem sau"
   read -r -p "Bam Enter khi xong... " _
+  kill "$hp" 2>/dev/null || true
+}
+
+# port cao nhat trong dai CHUA co dich vu nao dung (Vast co the dang dung vai port)
+free_test_port() {
+  local p="$2"
+  while (( p > $1 )) && ss -ltn 2>/dev/null | grep -q ":$p "; do p=$((p-1)); done
+  echo "$p"
+}
+# kiem tra modem da mo dung port cho may nay chua (khong doi cai dat gi)
+check_port() {
+  step "KIEM TRA PORT TREN MODEM"
+  load_net_info
+  local pr tp hp
+  pr="$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)"; [[ "$pr" =~ ^[0-9]+-[0-9]+$ ]] || pr="$PR"
+  tp="$(free_test_port "${pr%-*}" "${pr#*-}")"
+  python3 -m http.server "$tp" --bind 0.0.0.0 >/dev/null 2>&1 &
+  hp=$!; sleep 1
+  echo "May nay: IP LAN $LAN_IP · MAC $MAC · dai port $pr"
+  echo -e "Vao ${GRN}https://portchecker.co${NC}  nhap IP: ${GRN}$PUB_IP${NC}  port: ${GRN}$tp${NC}"
+  echo "  Open   -> modem dung. Chay tiep: sudo bash $SELF web"
+  echo "  Closed -> modem: DHCP Binding $MAC -> $LAN_IP · Port Forwarding $pr -> $LAN_IP (TCP+UDP), roi kiem tra lai"
+  read -r -p "Bam Enter khi xong... " _ || true
   kill "$hp" 2>/dev/null || true
 }
 
@@ -600,6 +624,7 @@ stage4() {
 case "${1:-}" in
   check)  preflight "${2:-}" ;;
   port)   port_step ;;
+  kiemtraport) check_port ;;
   status) echo "Dang o buoc: $(cat "$STATE" 2>/dev/null || echo 1)" ;;
   reset)  rm -f "$STATE"; ok "Da reset - chay lai: sudo bash $SELF" ;;
   selftest) run_selftest ;;
@@ -609,7 +634,7 @@ case "${1:-}" in
   "")
     case "$(cat "$STATE" 2>/dev/null || echo 1)" in
       1) stage1 ;; 2) stage2 ;; 3) stage3 ;; 4) stage4 ;;
-      done) ok "May nay da cai xong. Lenh huu ich: port | selftest | status"; load_net_info; print_port_box ;;
+      done) ok "May nay da cai xong. Lenh huu ich: ten | monitor | port | kiemtraport | web | selftest | status"; load_net_info; print_port_box ;;
       *) stage1 ;;
     esac ;;
   *) echo "Cach dung: sudo bash $SELF  [check|status|port|selftest|reset]"; exit 1 ;;
