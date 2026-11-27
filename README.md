@@ -68,13 +68,19 @@ sudo vastai show machines --raw | jq -r '(if type=="object" then .machines else 
 Gần như luôn do **máy nhảy IP LAN** → modem vẫn mở port cho IP cũ.
 1. Chạy lệnh quét → máy lỗi có ghi **DOI IP (cu: …)** → lấy **IP mới + MAC**
 2. Modem: **DHCP Binding** sửa MAC đó → IP mới (hoặc ép về IP cũ) · **Port Forwarding** dải port của máy → đúng IP đó, TCP+UDP
-3. Kiểm tra port – SSH vào máy, mở tạm 1 port (3 phút):
+3. Kiểm tra port – SSH vào máy, mở tạm 1 port (10 phút, thư mục rỗng – không lộ file):
    ```
-   R=$(cat /var/lib/vastai_kaalia/host_port_range); P=${R#*-}; while ss -ltn | grep -q ":$P "; do P=$((P-1)); done; echo "Vao portchecker.co kiem tra port $P"; sudo timeout 180 python3 -m http.server $P
+   R=$(cat /var/lib/vastai_kaalia/host_port_range); P=${R#*-}; while ss -ltn | grep -q ":$P "; do P=$((P-1)); done; echo "Vao portchecker.co kiem tra port $P"; sudo timeout 600 python3 -m http.server $P --directory $(mktemp -d)
    ```
    → https://portchecker.co nhập **IP mạng** + port vừa hiện → phải **Open** → Ctrl+C
    (bản script mới gọn hơn: `sudo bash vast_setup_rtx.sh kiemtraport`)
 4. `sudo bash vast_setup_rtx.sh web` → vài phút sau lỗi tự hết
+
+> ⚠️ **Self-test báo `Port never reachable` dù portchecker báo Open?** Modem FPT thường **không hỗ trợ NAT loopback** (máy trong nhà không gọi vòng qua IP mạng được) → self-test chạy **từ chính máy đó** luôn báo nhầm. Kiểm tra: `for h in IP_LAN IP_MANG; do timeout 12 bash -c "echo > /dev/tcp/$h/PORT" && echo "$h MO" || echo "$h KHONG"; done` (LAN `MO`, IP mạng `KHONG` = đúng là do modem). Cách chạy self-test ngay trên máy đó (đã chạy **ĐẠT** trên máy 157941): tạm gắn IP mạng vào máy trong lúc test:
+> ```
+> sudo ip addr add IP_MANG/32 dev lo; sudo vastai self-test machine ID 2>&1 | tee /tmp/selftest.txt; sudo ip addr del IP_MANG/32 dev lo
+> ```
+> Bản script mới **tự làm việc này**: `sudo bash vast_setup_rtx.sh selftest`. Hoặc chạy self-test từ một máy ở mạng khác (khác modem).
 
 ### Sửa "GPU error, unable to start instance"
 SSH vào máy:
