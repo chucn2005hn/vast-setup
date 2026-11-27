@@ -41,7 +41,27 @@ powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1
 ```
 powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1 -DatTen
 ```
-Bảng: **Tên** · IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · **DOI IP (cu: …)**. Máy tắt/mất mạng hiện ở mục **KHONG THAY TREN MANG**.
+Bảng: **Tên** · IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · IP mạng · **DOI IP (cu: …)**. Máy tắt/mất mạng hiện ở mục **KHONG THAY TREN MANG**.
+
+### 🆕 Xem máy nào Vast báo LỖI (lỗi port / bị ẩn / đổi IP mạng)
+Lần đầu chạy lệnh quét sẽ hỏi **API key** (https://cloud.vast.ai/manage-keys/ → New). Key lưu ở `%USERPROFILE%\vast_apikey.txt` trên máy Windows của bạn – **không gửi file này cho ai**.
+Sau đó cuối bảng có thêm:
+- **TAT CA MAY TREN VAST.AI** – mọi máy trong tài khoản (cả máy ở chỗ khác): IP mạng, có list không, độ tin cậy, **lỗi web đang báo**
+- **CO x MAY CAN XU LY** – danh sách máy lỗi màu đỏ + cách sửa
+
+Đổi key: thêm `-DoiKey` · Chỉ quét LAN, không hỏi Vast: thêm `-KhongVast`
+
+Xem lỗi ngay trên 1 máy Ubuntu bất kỳ (đã có API key):
+```
+sudo vastai show machines --raw | jq -r '(if type=="object" then .machines else . end)[] | "\(.id) ip=\(.public_ipaddr) listed=\(.listed) " + ([to_entries[] | select(.key|test("err|issue|warn";"i")) | select(.value!=null and .value!="" and .value!=false and .value!=0 and .value!=[]) | "\(.key)=\(.value|tostring)"] | join(" "))'
+```
+
+### Sửa "Port Networking Issues" (máy bị ẩn)
+Gần như luôn do **máy nhảy IP LAN** → modem vẫn mở port cho IP cũ.
+1. Chạy lệnh quét → máy lỗi có ghi **DOI IP (cu: …)** → lấy **IP mới + MAC**
+2. Modem: **DHCP Binding** sửa MAC đó → IP mới (hoặc ép về IP cũ) · **Port Forwarding** dải port của máy → đúng IP đó, TCP+UDP
+3. https://portchecker.co → nhập **IP mạng** + 1 port trong dải → phải **Open**
+4. SSH vào máy: `sudo bash vast_setup_rtx.sh web` → vài phút sau lỗi tự hết
 
 **Đặt tên lưu trên chính máy Ubuntu** (máy mới: script tự hỏi ở lần chạy 1; máy cũ: tải script mới rồi chạy 1 lần):
 ```

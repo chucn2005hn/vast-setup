@@ -7,8 +7,11 @@
 #  - Nho lai MAC -> IP: may nao DOI IP se bao "DOI IP (cu: ...)"
 #  - Dat ten cho may (de nho): them -DatTen
 #    powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1 -DatTen
+#  - Hoi Vast.ai (API key) xem may nao BAO LOI tren web: loi port, bi an,
+#    offline, doi IP mang. Lan dau hoi API key (luu tai %USERPROFILE%\vast_apikey.txt)
+#    Doi key: them -DoiKey   |   Chi quet mang LAN, khong hoi Vast: them -KhongVast
 # ==================================================================
-param([string]$User = "lehien", [string]$Prefix = "", [switch]$DatTen)
+param([string]$User = "lehien", [string]$Prefix = "", [switch]$DatTen, [switch]$DoiKey, [switch]$KhongVast)
 
 $ErrorActionPreference = "SilentlyContinue"
 $onWin = ($PSVersionTable.PSVersion.Major -le 5) -or $IsWindows
@@ -57,7 +60,8 @@ p=$(cat /var/lib/vastai_kaalia/host_port_range 2>/dev/null)
 i=$(cat /etc/vast-info 2>/dev/null | tr '\n' ' ')
 m=$(cat /sys/class/net/$(ip route show default | awk '{print $5; exit}')/address 2>/dev/null)
 w=$(nvidia-smi --query-gpu=pcie.link.width.current,pcie.link.width.max --format=csv,noheader,nounits 2>/dev/null | awk -F', *' '{printf "x%s%s ",$1,($1<$2?"(LOI)":"")}')
-echo "VASTINFO|$(hostname)|$g|$v|$p|$i|$m|$(uptime -p)|$w"
+u=$(curl -4 -s -m 5 api.ipify.org 2>/dev/null || wget -qO- -T 5 api.ipify.org 2>/dev/null)
+echo "VASTINFO|$(hostname)|$g|$v|$p|$i|$m|$(uptime -p)|$w|$u"
 '@ -replace "`r", ""
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($remote))
 
@@ -78,7 +82,7 @@ $rows = @()
 foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
   $mac = $macOf[$ip]
   if ($ip -eq $myIP) { continue }
-  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; PCIe = ""; Port = ""; ID = ""; GhiChu = "" }
+  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; PCIe = ""; Port = ""; ID = ""; IPMang = ""; GhiChu = "" }
   if ($ip -match '\.1$') { $row.TrangThai = "modem"; $rows += [pscustomobject]$row; continue }
 
   if (Test-Port22 $ip) {
@@ -90,6 +94,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
       $row.Card = $f[2].Trim()
       if ($f.Count -gt 8) { $row.PCIe = $f[8].Trim(); if ($row.PCIe -match "LOI") { $row.GhiChu = "CARD CHAY THIEU LANE (Vast bao GPU PCIE issue)" } }
       $row.Port = $f[4].Trim()
+      if ($f.Count -gt 9) { $row.IPMang = $f[9].Trim() }
       if ($f[5] -match 'ID=(\d+)') { $row.ID = $Matches[1] }
       if ($f[5] -match 'NAME=([^?\s]+)') { $row.Ten = $Matches[1] }
       if ($f[5] -match 'PORTS=(\S+)' -and -not $row.Port) { $row.Port = $Matches[1] }
@@ -114,9 +119,78 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
   $rows += [pscustomobject]$row
 }
 
+# ---- 5b. Hoi Vast.ai: may nao dang bao loi tren web --------------
+$vast = @()
+$keyFile = Join-Path $homeDir "vast_apikey.txt"
+if (-not $KhongVast) {
+  $key = ""
+  if ((Test-Path $keyFile) -and -not $DoiKey) { $key = (Get-Content $keyFile -Raw).Trim() }
+  if (-not $key) {
+    Write-Host "Dan API key Vast (https://cloud.vast.ai/manage-keys/) de xem loi tren web. Enter = bo qua:" -ForegroundColor Cyan
+    $key = (Read-Host "API key").Trim()
+    if ($key) { Set-Content -Path $keyFile -Value $key -Encoding ASCII }
+  }
+  if ($key) {
+    try {
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $resp = $null
+      try { $resp = Invoke-RestMethod -Uri "https://console.vast.ai/api/v0/machines/?owner=me" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 30 }
+      catch { $resp = Invoke-RestMethod -Uri "https://console.vast.ai/api/v0/machines?owner=me&api_key=$key" -TimeoutSec 30 }
+      $list = if ($resp.machines) { $resp.machines } else { @($resp) }
+      foreach ($m in $list) {
+        $mid = "$($m.id)"; if (-not $mid) { continue }
+        $errs = @()
+        foreach ($pr in $m.PSObject.Properties) {
+          if ($pr.Name -notmatch 'err|issue|warn|problem') { continue }
+          $val = $pr.Value
+          if ($null -eq $val) { continue }
+          $txt = if ($val -is [string] -or $val -is [ValueType]) { "$val" } else { ($val | ConvertTo-Json -Compress -Depth 3) }
+          if ($txt -match '^\s*(|0|False|false|null|\[\]|\{\})\s*$') { continue }
+          if ($txt.Length -gt 120) { $txt = $txt.Substring(0, 120) + "..." }
+          $errs += $txt
+        }
+        $rel = if ($m.reliability2) { [math]::Round([double]$m.reliability2 * 100, 1) } elseif ($m.reliability) { [math]::Round([double]$m.reliability * 100, 1) } else { "" }
+        $lan = $rows | Where-Object { $_.ID -eq $mid } | Select-Object -First 1
+        if (-not $lan) { $lan = $db.Values | Where-Object { $_.ID -eq $mid } | Select-Object -First 1 }
+        $vast += [pscustomobject]@{
+          ID = $mid; Ten = $(if ($lan) { $lan.Ten } else { "" }); IPLan = $(if ($lan) { $lan.IP } else { "?" })
+          Card = "$($m.num_gpus)x $($m.gpu_name)"; IPMang = "$($m.public_ipaddr)"
+          Listed = $(if ($m.listed) { "co" } else { "KHONG" }); TinCay = $rel
+          LoiTrenWeb = ($errs -join " | ")
+        }
+        if ($lan -and ($rows -contains $lan)) {
+          if ($errs) { $lan.GhiChu = (("VAST BAO LOI: " + ($errs -join " | ")) + "; " + $lan.GhiChu).Trim("; ") }
+          if ($lan.IPMang -and $m.public_ipaddr -and $lan.IPMang -ne "$($m.public_ipaddr)") { $lan.GhiChu = ("IP MANG DOI (Vast: $($m.public_ipaddr), may: $($lan.IPMang)) -> chay  sudo bash vast_setup_rtx.sh web; " + $lan.GhiChu).Trim("; ") }
+        }
+      }
+    } catch {
+      Write-Host "Khong hoi duoc Vast ($($_.Exception.Message)). Key sai/het han -> chay lai voi -DoiKey" -ForegroundColor Yellow
+    }
+  }
+}
+
 # ---- 6. In ket qua -----------------------------------------------
 Write-Host ""
-$rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, PCIe, Port, ID, GhiChu | Out-String -Width 250 | Write-Host
+Write-Host "=== MAY TRONG MANG LAN ($Prefix.x) ===" -ForegroundColor Cyan
+$rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, PCIe, Port, ID, IPMang, GhiChu | Out-String -Width 300 | Write-Host
+
+if ($vast) {
+  Write-Host "=== TAT CA MAY TREN VAST.AI (ca may o mang khac) ===" -ForegroundColor Cyan
+  $vast | Sort-Object ID | Format-Table -AutoSize ID, Ten, IPLan, Card, IPMang, Listed, TinCay, LoiTrenWeb | Out-String -Width 300 | Write-Host
+  $bad = @($vast | Where-Object { $_.LoiTrenWeb -or $_.Listed -eq "KHONG" })
+  if ($bad.Count -gt 0) {
+    Write-Host "CO $($bad.Count) MAY CAN XU LY:" -ForegroundColor Red
+    foreach ($b in $bad) {
+      $why = if ($b.LoiTrenWeb) { $b.LoiTrenWeb } else { "chua list / bi an" }
+      Write-Host ("  - May {0} {1} (LAN {2}, mang {3}): {4}" -f $b.ID, $b.Ten, $b.IPLan, $b.IPMang, $why) -ForegroundColor Red
+    }
+    Write-Host "  Loi PORT / Networking -> xem may do co 'DOI IP' o bang tren khong; vao modem sua DHCP Binding + Port Forwarding" -ForegroundColor Yellow
+    Write-Host "     dung IP LAN moi, dung dai port; kiem tra https://portchecker.co (IP mang + 1 port trong dai) phai Open;" -ForegroundColor Yellow
+    Write-Host "     xong SSH vao may chay:  sudo bash vast_setup_rtx.sh web" -ForegroundColor Yellow
+  } else {
+    Write-Host "Vast khong bao loi may nao." -ForegroundColor Green
+  }
+}
 
 $seen = @{}; foreach ($r in $rows) { $seen[$r.MAC] = $true }
 $missing = $db.Values | Where-Object { -not $seen.ContainsKey($_.MAC) -and $_.TrangThai -match "VAST|Ubuntu" }
