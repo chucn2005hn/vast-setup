@@ -10,8 +10,11 @@
 #  - Hoi Vast.ai (API key) xem may nao BAO LOI tren web: loi port, bi an,
 #    offline, doi IP mang. Lan dau hoi API key (luu tai %USERPROFILE%\vast_apikey.txt)
 #    Doi key: them -DoiKey   |   Chi quet mang LAN, khong hoi Vast: them -KhongVast
+#  - Xem TAT CA thong tin Vast cua 1 may (de gui ho tro / tim loi): them -ChiTiet 157941
+#  - May LAN khop voi ID tren Vast nho TEN MAY: tren moi may chay 1 lan
+#      sudo bash vast_setup_rtx.sh ten     (moi may 1 ten KHAC NHAU -> hien o dong "Name" tren web)
 # ==================================================================
-param([string]$User = "lehien", [string]$Prefix = "", [switch]$DatTen, [switch]$DoiKey, [switch]$KhongVast)
+param([string]$User = "lehien", [string]$Prefix = "", [switch]$DatTen, [switch]$DoiKey, [switch]$KhongVast, [string]$ChiTiet = "")
 
 $ErrorActionPreference = "SilentlyContinue"
 $onWin = ($PSVersionTable.PSVersion.Major -le 5) -or $IsWindows
@@ -74,7 +77,7 @@ function Test-Port22($ip) {
 $db = @{}
 if (Test-Path $dbFile) {
   Import-Csv $dbFile | ForEach-Object {
-    $db[$_.MAC] = [pscustomobject]@{ Ten = $_.Ten; MAC = $_.MAC; IP = $_.IP; TrangThai = $_.TrangThai; Card = $_.Card; Port = $_.Port; ID = $_.ID; LastSeen = $_.LastSeen }
+    $db[$_.MAC] = [pscustomobject]@{ Ten = $_.Ten; MAC = $_.MAC; IP = $_.IP; TrangThai = $_.TrangThai; Card = $_.Card; Port = $_.Port; ID = $_.ID; Host = $_.Host; LastSeen = $_.LastSeen }
   }
 }
 
@@ -82,7 +85,7 @@ $rows = @()
 foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
   $mac = $macOf[$ip]
   if ($ip -eq $myIP) { continue }
-  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; PCIe = ""; Port = ""; ID = ""; IPMang = ""; GhiChu = "" }
+  $row = [ordered]@{ Ten = ""; IP = $ip; MAC = $mac; TrangThai = ""; Card = ""; PCIe = ""; Port = ""; ID = ""; IPMang = ""; GhiChu = ""; Host = "" }
   if ($ip -match '\.1$') { $row.TrangThai = "modem"; $rows += [pscustomobject]$row; continue }
 
   if (Test-Port22 $ip) {
@@ -91,12 +94,14 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
     if ($info) {
       $f = $info.Split('|')
       if ($f[6]) { $mac = $f[6].Trim().ToLower(); $row.MAC = $mac }
+      $row.Host = $f[1].Trim()
       $row.Card = $f[2].Trim()
       if ($f.Count -gt 8) { $row.PCIe = $f[8].Trim(); if ($row.PCIe -match "LOI") { $row.GhiChu = "CARD CHAY THIEU LANE (Vast bao GPU PCIE issue)" } }
       $row.Port = $f[4].Trim()
       if ($f.Count -gt 9) { $row.IPMang = $f[9].Trim() }
       if ($f[5] -match 'ID=(\d+)') { $row.ID = $Matches[1] }
       if ($f[5] -match 'NAME=([^?\s]+)') { $row.Ten = $Matches[1] }
+      if (-not $row.Ten -and $row.Host -and $row.Host -ne $User) { $row.Ten = $row.Host }
       if ($f[5] -match 'PORTS=(\S+)' -and -not $row.Port) { $row.Port = $Matches[1] }
       $row.TrangThai = if ($f[3].Trim() -eq "active") { "DA CAI VAST" } elseif ($row.Card) { "Ubuntu, CHUA cai Vast" } else { "Ubuntu (khong thay card)" }
     } else {
@@ -109,10 +114,11 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
 
   if ($db.ContainsKey($mac)) {
     $old = $db[$mac]
-    if ($old.IP -ne $ip) { $row.GhiChu = "DOI IP (cu: $($old.IP))" }
+    if ($old.IP -ne $ip) { $row.GhiChu = ("DOI IP (cu: $($old.IP)) -> sua DHCP Binding + Port Forwarding; " + $row.GhiChu).Trim("; ") }
     if (-not $row.ID -and $old.ID) { $row.ID = $old.ID }
     if (-not $row.Port -and $old.Port) { $row.Port = $old.Port }
     if (-not $row.Ten -and $old.Ten) { $row.Ten = $old.Ten }
+    if (-not $row.Host -and $old.Host) { $row.Host = $old.Host }
   } elseif ($mac -ne "?" -and $row.TrangThai -notmatch "khong phai|modem") {
     if (-not $row.GhiChu) { $row.GhiChu = "may moi thay lan dau" }
   }
@@ -137,23 +143,39 @@ if (-not $KhongVast) {
       try { $resp = Invoke-RestMethod -Uri "https://console.vast.ai/api/v0/machines/?owner=me" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 30 }
       catch { $resp = Invoke-RestMethod -Uri "https://console.vast.ai/api/v0/machines?owner=me&api_key=$key" -TimeoutSec 30 }
       $list = if ($resp.machines) { $resp.machines } else { @($resp) }
+      if ($ChiTiet) {
+        $one = $list | Where-Object { "$($_.id)" -eq $ChiTiet.Trim() } | Select-Object -First 1
+        if ($one) { Write-Host "=== CHI TIET MAY $ChiTiet (copy gui ho tro / gui Claude) ===" -ForegroundColor Cyan; $one | Format-List * | Out-String -Width 250 | Write-Host }
+        else { Write-Host "Khong thay may $ChiTiet trong tai khoan" -ForegroundColor Yellow }
+      }
+      $hostCnt = @{}
+      foreach ($m in $list) { $h = "$($m.hostname)".ToLower(); if ($h) { $hostCnt[$h] = 1 + [int]$hostCnt[$h] } }
       foreach ($m in $list) {
         $mid = "$($m.id)"; if (-not $mid) { continue }
         $errs = @()
         foreach ($pr in $m.PSObject.Properties) {
-          if ($pr.Name -notmatch 'err|issue|warn|problem') { continue }
+          if ($pr.Name -notmatch 'err|issue|warn|problem' -or $pr.Name -match 'interrupt') { continue }
           $val = $pr.Value
           if ($null -eq $val) { continue }
           $txt = if ($val -is [string] -or $val -is [ValueType]) { "$val" } else { ($val | ConvertTo-Json -Compress -Depth 3) }
           if ($txt -match '^\s*(|0|False|false|null|\[\]|\{\})\s*$') { continue }
+          if ($txt -match '^\s*-?[0-9.]+\s*$') { continue }   # chi la con so, khong phai cau bao loi
           if ($txt.Length -gt 120) { $txt = $txt.Substring(0, 120) + "..." }
           $errs += $txt
         }
         $rel = if ($m.reliability2) { [math]::Round([double]$m.reliability2 * 100, 1) } elseif ($m.reliability) { [math]::Round([double]$m.reliability * 100, 1) } else { "" }
+        $apiHost = "$($m.hostname)".Trim()
+        $pubIP = "$($m.public_ipaddr)".Trim()
+        $uniq = $apiHost -and ($apiHost -ne $User) -and ($hostCnt[$apiHost.ToLower()] -eq 1)
         $lan = $rows | Where-Object { $_.ID -eq $mid } | Select-Object -First 1
+        if (-not $lan -and $uniq) {
+          $lan = $rows | Where-Object { $_.Host -eq $apiHost -and -not $_.ID -and $_.TrangThai -eq "DA CAI VAST" -and (-not $_.IPMang -or -not $pubIP -or $_.IPMang -eq $pubIP) } | Select-Object -First 1
+          if ($lan) { $lan.ID = $mid }
+        }
         if (-not $lan) { $lan = $db.Values | Where-Object { $_.ID -eq $mid } | Select-Object -First 1 }
+        if (-not $lan -and $uniq) { $lan = $db.Values | Where-Object { $_.Host -and $_.Host -eq $apiHost } | Select-Object -First 1 }
         $vast += [pscustomobject]@{
-          ID = $mid; Ten = $(if ($lan) { $lan.Ten } else { "" }); IPLan = $(if ($lan) { $lan.IP } else { "?" })
+          ID = $mid; TenWeb = $apiHost; Ten = $(if ($lan) { $lan.Ten } else { "" }); IPLan = $(if ($lan) { $lan.IP } else { "?" })
           Card = "$($m.num_gpus)x $($m.gpu_name)"; IPMang = "$($m.public_ipaddr)"
           Listed = $(if ($m.listed) { "co" } else { "KHONG" }); TinCay = $rel
           LoiTrenWeb = ($errs -join " | ")
@@ -176,19 +198,23 @@ $rows | Format-Table -AutoSize Ten, IP, MAC, TrangThai, Card, PCIe, Port, ID, IP
 
 if ($vast) {
   Write-Host "=== TAT CA MAY TREN VAST.AI (ca may o mang khac) ===" -ForegroundColor Cyan
-  $vast | Sort-Object ID | Format-Table -AutoSize ID, Ten, IPLan, Card, IPMang, Listed, TinCay, LoiTrenWeb | Out-String -Width 300 | Write-Host
+  $vast | Sort-Object ID | Format-Table -AutoSize ID, TenWeb, Ten, IPLan, Card, IPMang, Listed, TinCay, LoiTrenWeb | Out-String -Width 300 | Write-Host
   $bad = @($vast | Where-Object { $_.LoiTrenWeb -or $_.Listed -eq "KHONG" })
   if ($bad.Count -gt 0) {
     Write-Host "CO $($bad.Count) MAY CAN XU LY:" -ForegroundColor Red
     foreach ($b in $bad) {
       $why = if ($b.LoiTrenWeb) { $b.LoiTrenWeb } else { "chua list / bi an" }
-      Write-Host ("  - May {0} {1} (LAN {2}, mang {3}): {4}" -f $b.ID, $b.Ten, $b.IPLan, $b.IPMang, $why) -ForegroundColor Red
+      Write-Host ("  - May {0} {1} (LAN {2}, mang {3}): {4}" -f $b.ID, $(if ($b.Ten) { $b.Ten } elseif ($b.TenWeb -ne $User) { $b.TenWeb } else { "" }), $b.IPLan, $b.IPMang, $why) -ForegroundColor Red
     }
     Write-Host "  Loi PORT / Networking -> xem may do co 'DOI IP' o bang tren khong; vao modem sua DHCP Binding + Port Forwarding" -ForegroundColor Yellow
     Write-Host "     dung IP LAN moi, dung dai port; kiem tra https://portchecker.co (IP mang + 1 port trong dai) phai Open;" -ForegroundColor Yellow
     Write-Host "     xong SSH vao may chay:  sudo bash vast_setup_rtx.sh web" -ForegroundColor Yellow
   } else {
     Write-Host "Vast khong bao loi may nao." -ForegroundColor Green
+  }
+  if (@($vast | Where-Object { $_.IPLan -eq "?" }).Count -gt 0) {
+    Write-Host "May co 'IPLan ?' = chua biet la may nao trong LAN (may o cho khac, hoac nhieu may trung ten 'lehien')." -ForegroundColor DarkGray
+    Write-Host "  -> SSH vao TUNG may chay 1 lan:  sudo bash vast_setup_rtx.sh ten   (moi may 1 ten KHAC NHAU, vd 3060-50)" -ForegroundColor DarkGray
   }
 }
 
@@ -215,7 +241,7 @@ if ($DatTen) {
 $now = Get-Date -Format "yyyy-MM-dd HH:mm"
 foreach ($r in $rows) {
   if ($r.MAC -eq "?" -or $r.TrangThai -match "khong phai|modem") { continue }
-  $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; LastSeen = $now }
+  $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; Host = $r.Host; LastSeen = $now }
 }
 $db.Values | Export-Csv -NoTypeInformation -Encoding UTF8 $dbFile
 Write-Host "Da luu danh sach may: $dbFile" -ForegroundColor DarkGray

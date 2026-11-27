@@ -28,43 +28,60 @@ Cài trên từng máy (xem chi tiết mục 5 trong [README_2060.md](README_206
 wget -O vast_monitor.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_monitor.sh && sudo bash vast_monitor.sh install
 ```
 
-## Quét mạng: máy nào đã cài / chưa cài / đổi IP (chạy trên Windows)
-Tải 1 lần (CMD):
-```
-powershell -Command "iwr https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_scan.ps1 -OutFile $env:USERPROFILE\vast_scan.ps1"
-```
-Mỗi lần muốn xem (CMD):
-```
-powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1
-```
-Đặt / sửa tên máy ngay trên Windows (hỏi từng máy, Enter = giữ):
-```
-powershell -ExecutionPolicy Bypass -File %USERPROFILE%\vast_scan.ps1 -DatTen
-```
-Bảng: **Tên** · IP · MAC · **DA CAI VAST / CHUA cai Vast / khong vao duoc bang key** · card · dải port · ID máy · IP mạng · **DOI IP (cu: …)**. Máy tắt/mất mạng hiện ở mục **KHONG THAY TREN MANG**.
+## Quét mạng + xem máy LỖI: đã cài / chưa cài / đổi IP / lỗi port / bị ẩn (chạy trên Windows)
+Mở **PowerShell** (dấu nhắc `PS C:\...>`). Lệnh có `sudo` **không** chạy ở đây – phải `ssh lehien@IP` vào máy Ubuntu trước.
 
-### 🆕 Xem máy nào Vast báo LỖI (lỗi port / bị ẩn / đổi IP mạng)
-Lần đầu chạy lệnh quét sẽ hỏi **API key** (https://cloud.vast.ai/manage-keys/ → New). Key lưu ở `%USERPROFILE%\vast_apikey.txt` trên máy Windows của bạn – **không gửi file này cho ai**.
-Sau đó cuối bảng có thêm:
-- **TAT CA MAY TREN VAST.AI** – mọi máy trong tài khoản (cả máy ở chỗ khác): IP mạng, có list không, độ tin cậy, **lỗi web đang báo**
-- **CO x MAY CAN XU LY** – danh sách máy lỗi màu đỏ + cách sửa
+Tải / cập nhật công cụ (làm lại mỗi khi GitHub có bản mới):
+```
+iwr https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_scan.ps1 -OutFile $env:USERPROFILE\vast_scan.ps1
+```
+Mỗi lần muốn xem:
+```
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\vast_scan.ps1
+```
+Lần đầu hỏi **API key** (https://cloud.vast.ai/manage-keys/ → New). Key lưu ở `vast_apikey.txt` trong thư mục người dùng Windows – **không gửi file này cho ai**.
 
-Đổi key: thêm `-DoiKey` · Chỉ quét LAN, không hỏi Vast: thêm `-KhongVast`
+Kết quả có 3 phần:
+| Phần | Xem gì |
+|---|---|
+| **MAY TRONG MANG LAN** | Tên · IP · MAC · đã cài Vast chưa · card · **PCIe** (`x8(LOI)` = cắm sai khe) · dải port · **ID** · IP mạng · ghi chú **DOI IP (cu: …)** / **VAST BAO LOI: …** |
+| **TAT CA MAY TREN VAST.AI** | Mọi máy trong tài khoản (cả máy ở chỗ khác): TenWeb (dòng *Name* trên web) · IP LAN · IP mạng · có list không · độ tin cậy · **lỗi web đang báo** |
+| **CO x MAY CAN XU LY** | Danh sách máy lỗi (chữ đỏ) + cách sửa |
+
+Thêm vào cuối lệnh khi cần: `-DatTen` (đặt tên trên Windows) · `-DoiKey` (đổi API key) · `-KhongVast` (chỉ quét LAN) · `-ChiTiet 157941` (in **toàn bộ** thông tin Vast của 1 máy – để gửi hỗ trợ)
+
+### ⭐ Để công cụ biết máy nào là ID nào: đặt tên KHÁC NHAU cho từng máy (1 lần/máy)
+Mọi máy mặc định cùng tên `lehien` → nhiều máy chung 1 modem thì không phân biệt được (cột IPLan hiện `?`). SSH vào **từng máy** chạy:
+```
+wget -O vast_setup_rtx.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup_rtx.sh && sudo bash vast_setup_rtx.sh ten
+```
+→ gõ tên, vd `3060-50` (card + đuôi IP) · tên này thành **tên máy Ubuntu** và hiện ở dòng **Name:** trên thẻ máy trên web (1–2 phút, F5) → lần quét sau tự ghép đúng ID ↔ IP. Tên toàn số (vd `665`) sẽ thành `may-665`.
+(Máy GTX 1080 dùng `vast_setup.sh ten`.)
 
 Xem lỗi ngay trên 1 máy Ubuntu bất kỳ (đã có API key):
 ```
-sudo vastai show machines --raw | jq -r '(if type=="object" then .machines else . end)[] | "\(.id) ip=\(.public_ipaddr) listed=\(.listed) " + ([to_entries[] | select(.key|test("err|issue|warn";"i")) | select(.value!=null and .value!="" and .value!=false and .value!=0 and .value!=[]) | "\(.key)=\(.value|tostring)"] | join(" "))'
+sudo vastai show machines --raw | jq -r '(if type=="object" then .machines else . end)[] | "\(.id) \(.hostname) ip=\(.public_ipaddr) listed=\(.listed) " + ([to_entries[] | select(.key|test("err|issue|warn";"i")) | select(.key|test("interrupt";"i")|not) | select(.value|type=="string" and .!="") | .value] | join(" | "))'
 ```
 
 ### Sửa "Port Networking Issues" (máy bị ẩn)
 Gần như luôn do **máy nhảy IP LAN** → modem vẫn mở port cho IP cũ.
 1. Chạy lệnh quét → máy lỗi có ghi **DOI IP (cu: …)** → lấy **IP mới + MAC**
 2. Modem: **DHCP Binding** sửa MAC đó → IP mới (hoặc ép về IP cũ) · **Port Forwarding** dải port của máy → đúng IP đó, TCP+UDP
-3. https://portchecker.co → nhập **IP mạng** + 1 port trong dải → phải **Open**
-4. SSH vào máy: `sudo bash vast_setup_rtx.sh web` → vài phút sau lỗi tự hết
+3. Kiểm tra port – SSH vào máy, mở tạm 1 port (3 phút):
+   ```
+   P=$(cut -d- -f2 /var/lib/vastai_kaalia/host_port_range); echo "Vao portchecker.co kiem tra port $P"; sudo timeout 180 python3 -m http.server $P
+   ```
+   → https://portchecker.co nhập **IP mạng** + port vừa hiện → phải **Open** → Ctrl+C
+4. `sudo bash vast_setup_rtx.sh web` → vài phút sau lỗi tự hết
 
-**Đặt tên lưu trên chính máy Ubuntu** (máy mới: script tự hỏi ở lần chạy 1; máy cũ: tải script mới rồi chạy 1 lần):
+### Sửa "GPU error, unable to start instance"
+SSH vào máy:
 ```
-wget -O vast_setup_rtx.sh https://raw.githubusercontent.com/chucn2005hn/vast-setup/main/vast_setup_rtx.sh && sudo bash vast_setup_rtx.sh ten
+nvidia-smi --query-gpu=name,pcie.link.width.current --format=csv; lspci -k | grep -A3 -i nvidia | grep -iE "nvidia|driver in use"
 ```
-(lệnh này cũng ghi ID + dải port để công cụ quét hiện đủ)
+| Thấy | Làm |
+|---|---|
+| `RTX 3060, 16` + `driver in use: nvidia` | Card ổn → `sudo bash vast_setup_rtx.sh web`, theo dõi lỗi tự hết |
+| `driver in use: vfio-pci` | Card kẹt chế độ máy ảo → **khi không có khách**: `sudo reboot` |
+| Không có dòng NVIDIA nào | Máy không thấy card → tắt máy, cắm lại card khe x16, dây nguồn 8-pin |
+| `Failed` / `No devices` / lỗi khác | `sudo reboot` → vẫn lỗi: gửi kết quả `sudo dmesg -T \| grep -iE "xid\|nvrm" \| tail` |

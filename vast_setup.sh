@@ -295,29 +295,47 @@ find_machine_id() {
   [[ "$id" =~ ^[0-9]{4,8}$ ]] || { id=""; rm -f "$ID_FILE"; }
   if [[ -z "$id" ]]; then
     load_net_info
-    id="$("$VASTAI" show machines --raw 2>/dev/null | python3 -c '
-import sys, json
-ip = sys.argv[1]
+    # may cung IP mang (nhieu may chung 1 modem) -> khop theo TEN MAY (hostname), khong doan bua
+    local cand n last
+    cand="$("$VASTAI" show machines --raw 2>/dev/null | python3 -c '
+import sys, json, socket
+ip = sys.argv[1]; hn = socket.gethostname().lower()
 try:
     d = json.load(sys.stdin)
     ms = d.get("machines", d) if isinstance(d, dict) else d
-    c = [m for m in ms if str(m.get("public_ipaddr","")).strip() == ip]
-    c.sort(key=lambda m: m.get("id", 0))
-    print(c[-1]["id"] if c else "")
+    c = sorted([m for m in ms if str(m.get("public_ipaddr","")).strip() == ip], key=lambda m: m.get("id", 0))
+    h = [m for m in c if str(m.get("hostname","")).lower() == hn]
+    if len(h) == 1: c = h
+    for m in c:
+        print("%s %s %sx%s" % (m.get("id"), m.get("hostname") or "?", m.get("num_gpus","?"), str(m.get("gpu_name","?")).replace(" ","_")))
 except Exception:
-    print("")
+    pass
 ' "$PUB_IP")"
-    if [[ -z "$id" ]]; then
-      warn "Khong tu tim duoc ID may. Danh sach may trong tai khoan:"
-      "$VASTAI" show machines 2>/dev/null | head -20
-      echo "ID may la SO ngan (vd 155963), cot ID o tren / 'ID:' tren the may tren web."
-      echo "KHONG dan API key vao day."
+    n="$(grep -c . <<<"$cand")"
+    if [[ "$n" == "1" ]]; then
+      id="$(awk '{print $1}' <<<"$cand")"
+    elif [[ "$n" =~ ^[0-9]+$ ]] && (( n > 1 )); then
+      warn "Co $n may cung IP mang $PUB_IP - chon dung ID cua may NAY:"
+      awk '{printf "   ID %-8s ten=%-14s %s\n",$1,$2,$3}' <<<"$cand"
+      last="$(tail -1 <<<"$cand" | awk '{print $1}')"
+      echo "   ID lon nhat ($last) thuong la may VUA CAI. May cu: xem 'ID:' tren web."
+      echo "   (Lan sau tu nhan: dat ten KHAC NHAU cho moi may:  sudo bash $SELF ten)"
       while true; do
-        read -r -p "Nhap ID may (chi so): " id; id="${id//[^0-9]/}"
+        read -r -p "Nhap ID may nay [Enter = $last]: " id || { id=""; break; }; id="${id//[^0-9]/}"; id="${id:-$last}"
         [[ "$id" =~ ^[0-9]{4,8}$ ]] && break; err "ID phai la so 4-8 chu so"
       done
     fi
-    echo -n "$id" > "$ID_FILE"
+    if [[ -z "$id" ]]; then
+      warn "Khong tu tim duoc ID may. Danh sach may trong tai khoan:"
+      "$VASTAI" show machines 2>/dev/null | head -25
+      echo "ID may la SO ngan (vd 155963), cot ID o tren / 'ID:' tren the may tren web."
+      echo "KHONG dan API key vao day."
+      while true; do
+        read -r -p "Nhap ID may (chi so): " id || { id=""; break; }; id="${id//[^0-9]/}"
+        [[ "$id" =~ ^[0-9]{4,8}$ ]] && break; err "ID phai la so 4-8 chu so"
+      done
+    fi
+    [[ -n "$id" ]] && echo -n "$id" > "$ID_FILE"
   fi
   MACHINE_ID="$id"
   save_info
@@ -363,6 +381,39 @@ set_name() {
   nm="${nm:-$cur}"; nm="$(echo "$nm" | tr ' ' '-' | tr -cd 'A-Za-z0-9._-')"
   [[ -n "$nm" ]] || { warn "Chua dat ten (sau dat: sudo bash $SELF ten)"; return 0; }
   echo -n "$nm" > /root/vast_name; save_info; ok "Ten may: $nm"
+  set_hostname "$nm"
+}
+# co khach dang chay khong (container khach ten C.xxx, hoac may ao)
+has_client() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^C\.' && return 0
+  command -v virsh >/dev/null 2>&1 && virsh list --name 2>/dev/null | grep -v '^vm_test$' | grep -q . && return 0
+  return 1
+}
+# ten may -> hostname: web Vast hien o dong "Name:" -> biet the nao tren web la may nao
+set_hostname() {
+  local hn; hn="$(echo "$1" | tr 'A-Z' 'a-z' | tr '._' '--' | tr -cd 'a-z0-9-' | sed 's/^-*//;s/-*$//' | cut -c1-63)"
+  [[ "$hn" =~ ^[0-9]+$ ]] && hn="may-$hn"
+  [[ -n "$hn" ]] || return 0
+  if [[ "$(hostname)" != "$hn" ]]; then
+    mkdir -p /etc/cloud/cloud.cfg.d
+    echo 'preserve_hostname: true' > /etc/cloud/cloud.cfg.d/99-vast-hostname.cfg   # khoi dong lai khong bi doi ve ten cu
+    hostnamectl set-hostname "$hn" 2>/dev/null || { echo "$hn" > /etc/hostname; hostname "$hn"; }
+    if grep -qE '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+      sed -i -E "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t$hn/" /etc/hosts
+    else
+      printf '127.0.1.1\t%s\n' "$hn" >> /etc/hosts
+    fi
+    ok "Ten he thong (hostname): $hn  (lan SSH sau hien ${SUDO_USER:-user}@$hn)"
+  fi
+  systemctl is-active --quiet vastai 2>/dev/null || return 0
+  if has_client; then
+    python3 /var/lib/vastai_kaalia/send_mach_info.py >/dev/null 2>&1
+    warn "Dang co khach -> khong khoi dong lai Vast. Neu web chua doi 'Name:', het khach chay: sudo bash $SELF web"
+  else
+    systemctl restart vastai.service; sleep 5
+    python3 /var/lib/vastai_kaalia/send_mach_info.py >/dev/null 2>&1
+    ok "Da gui len web: 1-2 phut sau F5, dong 'Name:' tren the may = $hn"
+  fi
 }
 
 
