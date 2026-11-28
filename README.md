@@ -22,6 +22,26 @@ sudo apt update && sudo apt install -y openssh-server wget && wget -O vast_setup
 
 > ⚠️ Mỗi máy chỉ cắm **một loại card**. Không dán lệnh cài của Vast, API key hay mật khẩu lên GitHub.
 
+## 🔎 Tìm IP máy (dùng cho mọi máy)
+
+**🐧 Ngay trên máy Ubuntu** (cắm màn hình): IP hiện sẵn lúc đăng nhập, ở dòng `IPv4 address for enp...: 192.168.1.x`. Hoặc gõ:
+```
+hostname -I
+```
+- MAC của máy (để khoá IP trên modem): `ip -br link | grep -E "^en"`
+- IP mạng (IP công cộng): `curl -4 -s ifconfig.me; echo`
+- Máy **đã cài Vast bằng script** thì màn hình đứng ở logo → dùng cách trên Windows bên dưới.
+
+**🪟 Trên Windows (PowerShell), cắm cùng modem:**
+- Kiểm tra 1 máy có trong mạng không: `ping 192.168.1.118`
+- Liệt kê **mọi thiết bị** (IP + MAC) – dòng có MAC lạ là máy mới:
+```
+1..254 | % { (New-Object Net.NetworkInformation.Ping).SendPingAsync("192.168.1.$_",500) } | Out-Null; Start-Sleep 3; arp -a | Select-String "192.168.1."
+```
+- Quét **đầy đủ** (tên, card, PCIe, port, ID, máy đổi IP, máy Vast báo lỗi): xem mục *Quét mạng* bên dưới. Máy mới chưa cài SSH hiện `CHUA MO SSH`.
+- Không thấy máy nào? Kiểm tra Windows cùng dải: `ipconfig | findstr IPv4` → phải là `192.168.1.x` (modem khác dải thì đổi `192.168.1` trong lệnh trên).
+- IP mạng của xưởng: `(Invoke-WebRequest -UseBasicParsing https://api.ipify.org).Content`
+
 ## Theo dõi máy tự động (báo qua Discord)
 Cài trên từng máy (xem chi tiết mục 5 trong [README_2060.md](README_2060.md)):
 ```
