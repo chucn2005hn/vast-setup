@@ -122,7 +122,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
       $row.GhiChu = "may moi chua chay Lenh 1 / khoa khac"
     }
   } else {
-    $row.TrangThai = "khong phai may Ubuntu"
+    $row.TrangThai = "CHUA MO SSH (may moi chua cai SSH, hoac thiet bi khac)"
   }
 
   if ($db.ContainsKey($mac)) {
@@ -132,7 +132,7 @@ foreach ($ip in ($macOf.Keys | Sort-Object { [int]($_ -replace '.*\.', '') })) {
     if (-not $row.Port -and $old.Port) { $row.Port = $old.Port }
     if (-not $row.Ten -and $old.Ten) { $row.Ten = $old.Ten }
     if (-not $row.Host -and $old.Host) { $row.Host = $old.Host }
-  } elseif ($mac -ne "?" -and $row.TrangThai -notmatch "khong phai|modem") {
+  } elseif ($mac -ne "?" -and $row.TrangThai -notmatch "CHUA MO SSH|modem") {
     if (-not $row.GhiChu) { $row.GhiChu = "may moi thay lan dau" }
   }
   $rows += [pscustomobject]$row
@@ -255,7 +255,7 @@ if ($missing) {
 if ($DatTen) {
   Write-Host "DAT TEN CHO MAY (Enter = giu ten cu / bo qua). Khong dau, khong cach, vd 2060-ke-trai" -ForegroundColor Cyan
   foreach ($r in $rows) {
-    if ($r.TrangThai -match "khong phai|modem" -or $r.MAC -eq "?") { continue }
+    if ($r.TrangThai -match "CHUA MO SSH|modem" -or $r.MAC -eq "?") { continue }
     $cur = if ($r.Ten) { " [dang: $($r.Ten)]" } else { "" }
     $n = Read-Host "  $($r.IP)  $($r.Card) $($r.TrangThai)$cur -> ten"
     if ($n) { $r.Ten = ($n.Trim() -replace '\s+', '-') }
@@ -267,7 +267,7 @@ if ($DatTen) {
 $now = Get-Date -Format "yyyy-MM-dd HH:mm"
 foreach ($k in @($replaced.Keys)) { $db.Remove($k) }
 foreach ($r in $rows) {
-  if ($r.MAC -eq "?" -or $r.TrangThai -match "khong phai|modem") { continue }
+  if ($r.MAC -eq "?" -or $r.TrangThai -match "CHUA MO SSH|modem") { continue }
   $db[$r.MAC] = [pscustomobject]@{ Ten = $r.Ten; MAC = $r.MAC; IP = $r.IP; TrangThai = $r.TrangThai; Card = $r.Card; Port = $r.Port; ID = $r.ID; Host = $r.Host; IPMang = $r.IPMang; LastSeen = $now }
 }
 $db.Values | Export-Csv -NoTypeInformation -Encoding UTF8 $dbFile
